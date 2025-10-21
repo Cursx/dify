@@ -6,12 +6,14 @@ from flask_restx.api import HTTPStatus
 from werkzeug.exceptions import Forbidden
 
 from controllers.service_api import service_api_ns
-from controllers.service_api.wraps import FetchUserArg, WhereisUserArg, validate_app_token
+from controllers.service_api.wraps import validate_app_token
+from extensions.ext_database import db
 from extensions.ext_redis import redis_client
-from fields.annotation_fields import annotation_fields, build_annotation_model
+from fields.annotation_fields import annotation_fields, build_annotation_model, build_annotation_list_model
+from libs.helper import uuid_value
 from libs.login import current_user
 from models.account import Account
-from models.model import App, EndUser
+from models.model import App
 from services.annotation_service import AppAnnotationService
 
 # Define parsers for annotation API
@@ -167,9 +169,9 @@ class AnnotationUpdateDeleteApi(Resource):
             404: "Annotation not found",
         }
     )
-    @validate_app_token(fetch_user_arg=FetchUserArg(fetch_from=WhereisUserArg.JSON, required=True))
+    @validate_app_token()
     @service_api_ns.marshal_with(build_annotation_model(service_api_ns))
-    def put(self, app_model: App, end_user: EndUser, annotation_id):
+    def put(self, app_model: App, annotation_id):
         """Update an existing annotation."""
         # Service API doesn't support user permission checks for annotations
         # This endpoint is available for API token holders
@@ -189,8 +191,8 @@ class AnnotationUpdateDeleteApi(Resource):
             404: "Annotation not found",
         }
     )
-    @validate_app_token(fetch_user_arg=FetchUserArg(fetch_from=WhereisUserArg.JSON, required=True))
-    def delete(self, app_model: App, end_user: EndUser, annotation_id):
+    @validate_app_token()
+    def delete(self, app_model: App, annotation_id):
         """Delete an annotation."""
         # Service API doesn't support user permission checks for annotations
         # This endpoint is available for API token holders
