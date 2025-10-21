@@ -6,12 +6,12 @@ from flask_restx.api import HTTPStatus
 from werkzeug.exceptions import Forbidden
 
 from controllers.service_api import service_api_ns
-from controllers.service_api.wraps import validate_app_token
+from controllers.service_api.wraps import FetchUserArg, WhereisUserArg, validate_app_token
 from extensions.ext_redis import redis_client
 from fields.annotation_fields import annotation_fields, build_annotation_model
 from libs.login import current_user
 from models import Account
-from models.model import App
+from models.model import App, EndUser
 from services.annotation_service import AppAnnotationService
 
 # Define parsers for annotation API
@@ -119,7 +119,13 @@ class AnnotationListApi(Resource):
         limit = request.args.get("limit", default=20, type=int)
         keyword = request.args.get("keyword", default="", type=str)
 
-        annotation_list, total = AppAnnotationService.get_annotation_list_by_app_id(app_model.id, page, limit, keyword)
+        annotation_list, total = AppAnnotationService.get_annotation_list_by_app_id_for_service_api(
+            app_id=app_model.id, 
+            tenant_id=app_model.tenant_id,
+            page=page, 
+            limit=limit, 
+            keyword=keyword
+        )
         return {
             "data": annotation_list,
             "has_more": len(annotation_list) == limit,
@@ -160,9 +166,9 @@ class AnnotationUpdateDeleteApi(Resource):
             404: "Annotation not found",
         }
     )
-    @validate_app_token
+    @validate_app_token(fetch_user_arg=FetchUserArg(fetch_from=WhereisUserArg.JSON, required=True))
     @service_api_ns.marshal_with(build_annotation_model(service_api_ns))
-    def put(self, app_model: App, annotation_id):
+    def put(self, app_model: App, end_user: EndUser, annotation_id):
         """Update an existing annotation."""
         assert isinstance(current_user, Account)
         if not current_user.has_edit_permission:
