@@ -115,11 +115,10 @@ class AppAnnotationService:
 
     @classmethod
     def get_annotation_list_by_app_id(cls, app_id: str, page: int, limit: int, keyword: str):
-        # get app info
-        _, current_tenant_id = current_account_with_tenant()
+        # 读取型端点：仅依赖 app_id 与 App 状态
         app = (
             db.session.query(App)
-            .where(App.id == app_id, App.tenant_id == current_tenant_id, App.status == "normal")
+            .where(App.id == app_id, App.status == "normal")
             .first()
         )
 
