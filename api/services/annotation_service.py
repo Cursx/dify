@@ -115,15 +115,50 @@ class AppAnnotationService:
 
     @classmethod
     def get_annotation_list_by_app_id(cls, app_id: str, page: int, limit: int, keyword: str):
-        # 读取型端点：仅依赖 app_id 与 App 状态
+        # get app info
+        _, current_tenant_id = current_account_with_tenant()
         app = (
             db.session.query(App)
-            .where(App.id == app_id, App.status == "normal")
+            .where(App.id == app_id, App.tenant_id == current_tenant_id, App.status == "normal")
             .first()
         )
 
         if not app:
             raise NotFound("App not found")
+        if keyword:
+            stmt = (
+                select(MessageAnnotation)
+                .where(MessageAnnotation.app_id == app_id)
+                .where(
+                    or_(
+                        MessageAnnotation.question.ilike(f"%{keyword}%"),
+                        MessageAnnotation.content.ilike(f"%{keyword}%"),
+                    )
+                )
+                .order_by(MessageAnnotation.created_at.desc(), MessageAnnotation.id.desc())
+            )
+        else:
+            stmt = (
+                select(MessageAnnotation)
+                .where(MessageAnnotation.app_id == app_id)
+                .order_by(MessageAnnotation.created_at.desc(), MessageAnnotation.id.desc())
+            )
+        annotations = db.paginate(select=stmt, page=page, per_page=limit, max_per_page=100, error_out=False)
+        return annotations.items, annotations.total
+
+    @classmethod
+    def get_annotation_list_by_app_id_for_service_api(cls, app_id: str, tenant_id: str, page: int, limit: int, keyword: str):
+        """Get annotation list for service API without requiring current_account_with_tenant."""
+        # Validate app exists and belongs to the tenant
+        app = (
+            db.session.query(App)
+            .where(App.id == app_id, App.tenant_id == tenant_id, App.status == "normal")
+            .first()
+        )
+
+        if not app:
+            raise NotFound("App not found")
+        
         if keyword:
             stmt = (
                 select(MessageAnnotation)
