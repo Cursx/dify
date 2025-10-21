@@ -114,41 +114,8 @@ class AppAnnotationService:
         return {"job_id": job_id, "job_status": "waiting"}
 
     @classmethod
-    def get_annotation_list_by_app_id(cls, app_id: str, page: int, limit: int, keyword: str):
-        # get app info
-        _, current_tenant_id = current_account_with_tenant()
-        app = (
-            db.session.query(App)
-            .where(App.id == app_id, App.tenant_id == current_tenant_id, App.status == "normal")
-            .first()
-        )
-
-        if not app:
-            raise NotFound("App not found")
-        if keyword:
-            stmt = (
-                select(MessageAnnotation)
-                .where(MessageAnnotation.app_id == app_id)
-                .where(
-                    or_(
-                        MessageAnnotation.question.ilike(f"%{keyword}%"),
-                        MessageAnnotation.content.ilike(f"%{keyword}%"),
-                    )
-                )
-                .order_by(MessageAnnotation.created_at.desc(), MessageAnnotation.id.desc())
-            )
-        else:
-            stmt = (
-                select(MessageAnnotation)
-                .where(MessageAnnotation.app_id == app_id)
-                .order_by(MessageAnnotation.created_at.desc(), MessageAnnotation.id.desc())
-            )
-        annotations = db.paginate(select=stmt, page=page, per_page=limit, max_per_page=100, error_out=False)
-        return annotations.items, annotations.total
-
-    @classmethod
-    def get_annotation_list_by_app_id_for_service_api(cls, app_id: str, tenant_id: str, page: int, limit: int, keyword: str):
-        """Get annotation list for service API without requiring current_account_with_tenant."""
+    def _build_annotation_query_and_paginate(cls, app_id: str, tenant_id: str, page: int, limit: int, keyword: str):
+        """Private helper method to build annotation query and paginate results."""
         # Validate app exists and belongs to the tenant
         app = (
             db.session.query(App)
@@ -159,6 +126,7 @@ class AppAnnotationService:
         if not app:
             raise NotFound("App not found")
         
+        # Build query statement based on keyword
         if keyword:
             stmt = (
                 select(MessageAnnotation)
@@ -177,8 +145,21 @@ class AppAnnotationService:
                 .where(MessageAnnotation.app_id == app_id)
                 .order_by(MessageAnnotation.created_at.desc(), MessageAnnotation.id.desc())
             )
+        
+        # Execute paginated query
         annotations = db.paginate(select=stmt, page=page, per_page=limit, max_per_page=100, error_out=False)
         return annotations.items, annotations.total
+
+    @classmethod
+    def get_annotation_list_by_app_id(cls, app_id: str, page: int, limit: int, keyword: str):
+        # get app info
+        _, current_tenant_id = current_account_with_tenant()
+        return cls._build_annotation_query_and_paginate(app_id, current_tenant_id, page, limit, keyword)
+
+    @classmethod
+    def get_annotation_list_by_app_id_for_service_api(cls, app_id: str, tenant_id: str, page: int, limit: int, keyword: str):
+        """Get annotation list for service API without requiring current_account_with_tenant."""
+        return cls._build_annotation_query_and_paginate(app_id, tenant_id, page, limit, keyword)
 
     @classmethod
     def export_annotation_list_by_app_id(cls, app_id: str):
