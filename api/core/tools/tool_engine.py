@@ -243,8 +243,7 @@ class ToolEngine:
                 )
             elif response.type in {ToolInvokeMessage.MessageType.IMAGE_LINK, ToolInvokeMessage.MessageType.IMAGE}:
                 parts.append(
-                    "image has been created and sent to user already, "
-                    + "you do not need to create it, just tell the user to check it now."
+                    "image has been created and sent to user already, you do not need to create it, just tell the user to check it now."
                 )
             elif response.type == ToolInvokeMessage.MessageType.JSON:
                 json_parts.append(
