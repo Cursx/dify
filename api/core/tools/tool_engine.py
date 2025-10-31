@@ -229,6 +229,9 @@ class ToolEngine:
         Handle tool response
         """
         result = ""
+        # If there is already plain text in responses, prefer it and avoid duplicating JSON as text.
+        has_text_message = any(r.type == ToolInvokeMessage.MessageType.TEXT for r in tool_response)
+
         for response in tool_response:
             if response.type == ToolInvokeMessage.MessageType.TEXT:
                 result += cast(ToolInvokeMessage.TextMessage, response.message).text
@@ -243,10 +246,11 @@ class ToolEngine:
                     + "you do not need to create it, just tell the user to check it now."
                 )
             elif response.type == ToolInvokeMessage.MessageType.JSON:
-                result += json.dumps(
-                    safe_json_value(cast(ToolInvokeMessage.JsonMessage, response.message).json_object),
-                    ensure_ascii=False,
-                )
+                if not has_text_message:
+                    result += json.dumps(
+                        safe_json_value(cast(ToolInvokeMessage.JsonMessage, response.message).json_object),
+                        ensure_ascii=False,
+                    )
             else:
                 result += str(response.message)
 
