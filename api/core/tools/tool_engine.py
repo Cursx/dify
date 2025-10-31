@@ -228,33 +228,39 @@ class ToolEngine:
         """
         Handle tool response
         """
-        result = ""
-        # If there is already plain text in responses, prefer it and avoid duplicating JSON as text.
-        has_text_message = any(r.type == ToolInvokeMessage.MessageType.TEXT for r in tool_response)
+        parts: list[str] = []
+        json_parts: list[str] = []
+        saw_text = False
 
         for response in tool_response:
             if response.type == ToolInvokeMessage.MessageType.TEXT:
-                result += cast(ToolInvokeMessage.TextMessage, response.message).text
+                parts.append(cast(ToolInvokeMessage.TextMessage, response.message).text)
+                saw_text = True
             elif response.type == ToolInvokeMessage.MessageType.LINK:
-                result += (
+                parts.append(
                     f"result link: {cast(ToolInvokeMessage.TextMessage, response.message).text}."
                     + " please tell user to check it."
                 )
             elif response.type in {ToolInvokeMessage.MessageType.IMAGE_LINK, ToolInvokeMessage.MessageType.IMAGE}:
-                result += (
+                parts.append(
                     "image has been created and sent to user already, "
                     + "you do not need to create it, just tell the user to check it now."
                 )
             elif response.type == ToolInvokeMessage.MessageType.JSON:
-                if not has_text_message:
-                    result += json.dumps(
+                json_parts.append(
+                    json.dumps(
                         safe_json_value(cast(ToolInvokeMessage.JsonMessage, response.message).json_object),
                         ensure_ascii=False,
                     )
+                )
             else:
-                result += str(response.message)
+                parts.append(str(response.message))
 
-        return result
+        # 仅当没有出现 TEXT 消息时，才将 JSON 文本加入到结果中，避免重复。
+        if not saw_text and json_parts:
+            parts.extend(json_parts)
+
+        return "".join(parts)
 
     @staticmethod
     def _extract_tool_response_binary_and_text(
