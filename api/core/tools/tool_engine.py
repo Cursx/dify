@@ -238,8 +238,8 @@ class ToolEngine:
                 saw_text = True
             elif response.type == ToolInvokeMessage.MessageType.LINK:
                 parts.append(
-                    f"result link: {cast(ToolInvokeMessage.TextMessage, response.message).text}."
-                    + " please tell user to check it."
+                    f"result link: {cast(ToolInvokeMessage.TextMessage, response.message).text}. "
+                    "please tell user to check it."
                 )
             elif response.type in {ToolInvokeMessage.MessageType.IMAGE_LINK, ToolInvokeMessage.MessageType.IMAGE}:
                 parts.append(
