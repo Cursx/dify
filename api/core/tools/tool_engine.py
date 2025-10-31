@@ -256,7 +256,7 @@ class ToolEngine:
             else:
                 parts.append(str(response.message))
 
-        # 仅当没有出现 TEXT 消息时，才将 JSON 文本加入到结果中，避免重复。
+        # Only add JSON parts to the result if no TEXT message was found, to avoid duplication.
         if not saw_text and json_parts:
             parts.extend(json_parts)
 
