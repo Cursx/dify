@@ -233,9 +233,6 @@ class ToolEngine:
         saw_text = False
 
         for response in tool_response:
-            if response.type == ToolInvokeMessage.MessageType.TEXT:
-                parts.append(cast(ToolInvokeMessage.TextMessage, response.message).text)
-                saw_text = True
             elif response.type == ToolInvokeMessage.MessageType.LINK:
                 parts.append(
                     f"result link: {cast(ToolInvokeMessage.TextMessage, response.message).text}. "
@@ -243,7 +240,8 @@ class ToolEngine:
                 )
             elif response.type in {ToolInvokeMessage.MessageType.IMAGE_LINK, ToolInvokeMessage.MessageType.IMAGE}:
                 parts.append(
-                    "image has been created and sent to user already, you do not need to create it, just tell the user to check it now."
+                    "image has been created and sent to user already, "
+                    "you do not need to create it, just tell the user to check it now."
                 )
             elif response.type == ToolInvokeMessage.MessageType.JSON:
                 json_parts.append(
