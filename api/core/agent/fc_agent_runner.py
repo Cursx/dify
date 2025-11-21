@@ -296,29 +296,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     # publish end event immediately and return
                     final_answer = str(tool_invoke_response or "")
                     llm_final_usage = llm_usage.get("usage") or LLMUsage.empty_usage()
-                    self.queue_manager.publish(
-                        QueueMessageEndEvent(
-                            llm_result=LLMResult(
-                                model=model_instance.model,
-                                prompt_messages=prompt_messages,
-                                message=AssistantPromptMessage(content=final_answer),
-                                usage=llm_final_usage,
-                                system_fingerprint="",
-                            )
-                        ),
-                        PublishFrom.APPLICATION_MANAGER,
-                    )
-
-                    yield LLMResultChunk(
-                        model=model_instance.model,
-                        prompt_messages=prompt_messages,
-                        system_fingerprint="",
-                        delta=LLMResultChunkDelta(
-                            index=0,
-                            message=AssistantPromptMessage(content=final_answer),
-                            usage=llm_final_usage,
-                        ),
-                    )
+                    yield from self._yield_final_answer(prompt_messages, final_answer, llm_final_usage)
                     return
 
             if len(tool_responses) > 0:
@@ -348,18 +326,10 @@ class FunctionCallAgentRunner(BaseAgentRunner):
 
             iteration_step += 1
 
-        # publish end event
-        self.queue_manager.publish(
-            QueueMessageEndEvent(
-                llm_result=LLMResult(
-                    model=model_instance.model,
-                    prompt_messages=prompt_messages,
-                    message=AssistantPromptMessage(content=final_answer),
-                    usage=llm_usage["usage"] or LLMUsage.empty_usage(),
-                    system_fingerprint="",
-                )
-            ),
-            PublishFrom.APPLICATION_MANAGER,
+        yield from self._yield_final_answer(
+            prompt_messages,
+            final_answer,
+            llm_usage["usage"] or LLMUsage.empty_usage(),
         )
 
     def check_tool_calls(self, llm_result_chunk: LLMResultChunk) -> bool:
@@ -423,6 +393,36 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             )
 
         return tool_calls
+
+    def _yield_final_answer(
+        self,
+        prompt_messages: list,
+        final_answer: str,
+        usage: LLMUsage,
+    ) -> Generator[LLMResultChunk, None, None]:
+        self.queue_manager.publish(
+            QueueMessageEndEvent(
+                llm_result=LLMResult(
+                    model=self.model_instance.model,
+                    prompt_messages=prompt_messages,
+                    message=AssistantPromptMessage(content=final_answer),
+                    usage=usage,
+                    system_fingerprint="",
+                )
+            ),
+            PublishFrom.APPLICATION_MANAGER,
+        )
+
+        yield LLMResultChunk(
+            model=self.model_instance.model,
+            prompt_messages=prompt_messages,
+            system_fingerprint="",
+            delta=LLMResultChunkDelta(
+                index=0,
+                message=AssistantPromptMessage(content=final_answer),
+                usage=usage,
+            ),
+        )
 
     def _init_system_message(self, prompt_template: str, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
         """
