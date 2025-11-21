@@ -283,7 +283,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                         agent_thought_id=agent_thought_id,
                         tool_name=tool_call_name,
                         tool_input=tool_call_args,
-                        thought="",
+                        thought=llm_result.message.content or "",
                         tool_invoke_meta={tool_call_name: tool_invoke_meta.to_dict()},
                         observation={tool_call_name: tool_invoke_response},
                         answer=str(tool_invoke_response or ""),
