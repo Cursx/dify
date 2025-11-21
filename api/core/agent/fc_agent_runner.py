@@ -329,7 +329,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         yield from self._yield_final_answer(
             prompt_messages,
             final_answer,
-            llm_usage["usage"] or LLMUsage.empty_usage(),
+            llm_usage.get("usage") or LLMUsage.empty_usage(),
         )
 
     def check_tool_calls(self, llm_result_chunk: LLMResultChunk) -> bool:
