@@ -213,11 +213,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                     scratchpad.agent_response = tool_invoke_response
 
                     # detect direct return
-                    direct_flag = False
-                    try:
-                        direct_flag = bool(tool_invoke_meta.extra and tool_invoke_meta.extra.get("return_direct"))
-                    except Exception:
-                        direct_flag = False
+                    direct_flag = bool(tool_invoke_meta.extra and tool_invoke_meta.extra.get("return_direct"))
 
                     self.save_agent_thought(
                         agent_thought_id=agent_thought_id,
