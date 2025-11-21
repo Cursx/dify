@@ -281,8 +281,8 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     # save agent thought for this tool call
                     self.save_agent_thought(
                         agent_thought_id=agent_thought_id,
-                        tool_name="",
-                        tool_input="",
+                        tool_name=tool_call_name,
+                        tool_input=tool_call_args,
                         thought="",
                         tool_invoke_meta={tool_call_name: tool_invoke_meta.to_dict()},
                         observation={tool_call_name: tool_invoke_response},
