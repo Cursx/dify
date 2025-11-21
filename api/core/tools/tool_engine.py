@@ -113,10 +113,7 @@ class ToolEngine:
                 if m.type == ToolInvokeMessage.MessageType.VARIABLE:
                     variable = cast(ToolInvokeMessage.VariableMessage, m.message)
                     if variable and variable.variable_name == "return_direct":
-                        try:
-                            return_direct = bool(variable.variable_value)
-                        except Exception:
-                            return_direct = False
+                         return_direct = bool(variable.variable_value)
 
             plain_text = ToolEngine._convert_tool_response_to_str(message_list)
 
