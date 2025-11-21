@@ -266,11 +266,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
 
                 tool_responses.append(tool_response)
                 # check direct return flag
-                direct_flag = False
-                try:
-                    direct_flag = bool(tool_invoke_meta.extra and tool_invoke_meta.extra.get("return_direct"))
-                except Exception:
-                    direct_flag = False
+                direct_flag = bool(tool_invoke_meta.extra and tool_invoke_meta.extra.get("return_direct"))
 
                 if tool_response["tool_response"] is not None and not direct_flag:
                     self._current_thoughts.append(
