@@ -396,7 +396,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
 
     def _yield_final_answer(
         self,
-        prompt_messages: list,
+        prompt_messages: list[PromptMessage],
         final_answer: str,
         usage: LLMUsage,
     ) -> Generator[LLMResultChunk, None, None]:
