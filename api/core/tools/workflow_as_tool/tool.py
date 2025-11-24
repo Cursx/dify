@@ -114,10 +114,24 @@ class WorkflowTool(Tool):
             for file in files:
                 yield self.create_file_message(file)  # type: ignore
 
+        # detect return_direct flag from workflow outputs
+        return_direct_flag = False
+        if isinstance(outputs, dict) and "return_direct" in outputs:
+            raw_flag = outputs.pop("return_direct")
+            if isinstance(raw_flag, str):
+                return_direct_flag = raw_flag.strip().lower() in {"true", "1", "yes", "y"}
+            else:
+                try:
+                    return_direct_flag = bool(raw_flag)
+                except Exception:
+                    return_direct_flag = False
+
         self._latest_usage = self._derive_usage_from_result(data)
 
         yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
         yield self.create_json_message(outputs, suppress_output=True)
+        if return_direct_flag:
+            yield self.create_variable_message("return_direct", True)
 
     @property
     def latest_usage(self) -> LLMUsage:
