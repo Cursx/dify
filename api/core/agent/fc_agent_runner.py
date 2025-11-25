@@ -278,25 +278,18 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     )
 
                 if direct_flag:
-                    # save agent thought for this tool call
-                    self.save_agent_thought(
-                        agent_thought_id=agent_thought_id,
-                        tool_name=tool_call_name,
-                        tool_input=tool_call_args,
-                        thought=response or "",
-                        tool_invoke_meta={tool_call_name: tool_invoke_meta.to_dict()},
-                        observation={tool_call_name: tool_invoke_response},
-                        answer=str(tool_invoke_response or ""),
-                        messages_ids=message_file_ids,
-                    )
-                    self.queue_manager.publish(
-                        QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
-                    )
-
-                    # publish end event immediately and return
-                    final_answer = str(tool_invoke_response or "")
                     llm_final_usage = llm_usage.get("usage") or LLMUsage.empty_usage()
-                    yield from self._yield_final_answer(prompt_messages, final_answer, llm_final_usage)
+                    yield from self._handle_direct_return(
+                        agent_thought_id,
+                        tool_call_name,
+                        tool_call_args,
+                        response or "",
+                        tool_invoke_meta,
+                        tool_invoke_response,
+                        message_file_ids,
+                        prompt_messages,
+                        llm_final_usage,
+                    )
                     return
 
             if len(tool_responses) > 0:
@@ -423,6 +416,34 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                 usage=usage,
             ),
         )
+
+    def _handle_direct_return(
+        self,
+        agent_thought_id: str,
+        tool_call_name: str,
+        tool_call_args: dict[str, Any],
+        response: str,
+        tool_invoke_meta: ToolInvokeMeta,
+        tool_invoke_response: str | None,
+        message_file_ids: list[str],
+        prompt_messages: list[PromptMessage],
+        usage: LLMUsage,
+    ) -> Generator[LLMResultChunk, None, None]:
+        self.save_agent_thought(
+            agent_thought_id=agent_thought_id,
+            tool_name=tool_call_name,
+            tool_input=tool_call_args,
+            thought=response,
+            tool_invoke_meta={tool_call_name: tool_invoke_meta.to_dict()},
+            observation={tool_call_name: tool_invoke_response},
+            answer=str(tool_invoke_response or ""),
+            messages_ids=message_file_ids,
+        )
+        self.queue_manager.publish(
+            QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
+        )
+        final_answer = str(tool_invoke_response or "")
+        yield from self._yield_final_answer(prompt_messages, final_answer, usage)
 
     def _init_system_message(self, prompt_template: str, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
         """
