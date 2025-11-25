@@ -121,10 +121,7 @@ class WorkflowTool(Tool):
             if isinstance(raw_flag, str):
                 return_direct_flag = raw_flag.strip().lower() in {"true", "1", "yes", "y"}
             else:
-                try:
-                    return_direct_flag = bool(raw_flag)
-                except Exception:
-                    return_direct_flag = False
+                return_direct_flag = bool(raw_flag)
 
         self._latest_usage = self._derive_usage_from_result(data)
 
