@@ -114,7 +114,6 @@ class WorkflowTool(Tool):
             for file in files:
                 yield self.create_file_message(file)  # type: ignore
 
-        # detect return_direct flag from workflow outputs
         return_direct_flag = False
         if isinstance(outputs, dict) and "return_direct" in outputs:
             raw_flag = outputs.pop("return_direct")
@@ -128,7 +127,16 @@ class WorkflowTool(Tool):
 
         self._latest_usage = self._derive_usage_from_result(data)
 
-        yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+        direct_text = None
+        if isinstance(outputs, dict):
+            v = outputs.get("text")
+            if isinstance(v, str) and v.strip():
+                direct_text = v
+
+        if return_direct_flag and isinstance(direct_text, str):
+            yield self.create_text_message(direct_text)
+        else:
+            yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
         yield self.create_json_message(outputs, suppress_output=True)
         if return_direct_flag:
             yield self.create_variable_message("return_direct", True)
