@@ -429,7 +429,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             agent_thought_id=agent_thought_id,
             tool_name="",
             tool_input="",
-            thought=response,
+            thought="",
             tool_invoke_meta={tr["tool_call_name"]: tr["meta"] for tr in tool_responses},
             observation={tr["tool_call_name"]: tr["tool_response"] for tr in tool_responses},
             answer=str(tool_invoke_response or ""),
