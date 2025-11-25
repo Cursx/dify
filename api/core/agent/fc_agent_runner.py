@@ -281,10 +281,8 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     llm_final_usage = llm_usage.get("usage") or LLMUsage.empty_usage()
                     yield from self._handle_direct_return(
                         agent_thought_id,
-                        tool_call_name,
-                        tool_call_args,
+                        tool_responses,
                         response or "",
-                        tool_invoke_meta,
                         tool_invoke_response,
                         message_file_ids,
                         prompt_messages,
@@ -420,10 +418,8 @@ class FunctionCallAgentRunner(BaseAgentRunner):
     def _handle_direct_return(
         self,
         agent_thought_id: str,
-        tool_call_name: str,
-        tool_call_args: dict[str, Any],
+        tool_responses: list[dict[str, Any]],
         response: str,
-        tool_invoke_meta: ToolInvokeMeta,
         tool_invoke_response: str | None,
         message_file_ids: list[str],
         prompt_messages: list[PromptMessage],
@@ -431,11 +427,11 @@ class FunctionCallAgentRunner(BaseAgentRunner):
     ) -> Generator[LLMResultChunk, None, None]:
         self.save_agent_thought(
             agent_thought_id=agent_thought_id,
-            tool_name=tool_call_name,
-            tool_input=tool_call_args,
+            tool_name="",
+            tool_input="",
             thought=response,
-            tool_invoke_meta={tool_call_name: tool_invoke_meta.to_dict()},
-            observation={tool_call_name: tool_invoke_response},
+            tool_invoke_meta={tr["tool_call_name"]: tr["meta"] for tr in tool_responses},
+            observation={tr["tool_call_name"]: tr["tool_response"] for tr in tool_responses},
             answer=str(tool_invoke_response or ""),
             messages_ids=message_file_ids,
         )
