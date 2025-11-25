@@ -282,7 +282,6 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     yield from self._handle_direct_return(
                         agent_thought_id,
                         tool_responses,
-                        response or "",
                         tool_invoke_response,
                         message_file_ids,
                         prompt_messages,
@@ -419,7 +418,6 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         self,
         agent_thought_id: str,
         tool_responses: list[dict[str, Any]],
-        response: str,
         tool_invoke_response: str | None,
         message_file_ids: list[str],
         prompt_messages: list[PromptMessage],
