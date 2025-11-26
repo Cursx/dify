@@ -114,7 +114,6 @@ class ToolEngine:
                     variable = cast(ToolInvokeMessage.VariableMessage, m.message)
                     if (
                         variable.variable_name == "return_direct"
-                        and isinstance(variable.variable_value, bool)
                         and variable.variable_value is True
                     ):
                         return_direct = True
