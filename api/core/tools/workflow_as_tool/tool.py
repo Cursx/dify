@@ -114,17 +114,14 @@ class WorkflowTool(Tool):
             for file in files:
                 yield self.create_file_message(file)  # type: ignore
 
-        # detect return_direct flag from workflow outputs
+        # detect return_direct flag from workflow outputs (strict boolean only)
         return_direct_flag = False
         if isinstance(outputs, dict) and "return_direct" in outputs:
             raw_flag = outputs.pop("return_direct")
-            if isinstance(raw_flag, str):
-                return_direct_flag = raw_flag.strip().lower() in {"true", "1", "yes", "y"}
+            if isinstance(raw_flag, bool):
+                return_direct_flag = raw_flag
             else:
-                try:
-                    return_direct_flag = bool(raw_flag)
-                except Exception:
-                    return_direct_flag = False
+                return_direct_flag = False
 
         self._latest_usage = self._derive_usage_from_result(data)
 
