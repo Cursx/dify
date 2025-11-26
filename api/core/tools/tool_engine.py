@@ -107,15 +107,18 @@ class ToolEngine:
                 tool_messages=binary_files, agent_message=message, invoke_from=invoke_from, user_id=user_id
             )
 
-            # detect return_direct signal from variable messages (short-circuit)
-            variable_messages = (
-                cast(ToolInvokeMessage.VariableMessage, m.message)
-                for m in message_list if m.type == ToolInvokeMessage.MessageType.VARIABLE
-            )
-            return_direct = any(
-                vm.variable_name == "return_direct" and bool(vm.variable_value)
-                for vm in variable_messages
-            )
+            # detect return_direct signal from variable messages (strict boolean short-circuit)
+            return_direct = False
+            for m in message_list:
+                if m.type == ToolInvokeMessage.MessageType.VARIABLE:
+                    variable = cast(ToolInvokeMessage.VariableMessage, m.message)
+                    if (
+                        variable.variable_name == "return_direct"
+                        and isinstance(variable.variable_value, bool)
+                        and variable.variable_value is True
+                    ):
+                        return_direct = True
+                        break
 
             plain_text = ToolEngine._convert_tool_response_to_str(message_list)
 
