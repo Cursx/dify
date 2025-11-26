@@ -118,10 +118,8 @@ class WorkflowTool(Tool):
         return_direct_flag = False
         if isinstance(outputs, dict) and "return_direct" in outputs:
             raw_flag = outputs.pop("return_direct")
-            if isinstance(raw_flag, bool):
-                return_direct_flag = raw_flag
-            else:
-                return_direct_flag = False
+            if raw_flag is True:
+                return_direct_flag = True
 
         self._latest_usage = self._derive_usage_from_result(data)
 
