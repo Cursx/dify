@@ -426,13 +426,20 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         final_answer = "\n".join(
             [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
         )
+        tool_invoke_meta_agg: dict[str, list[Any]] = {}
+        observation_agg: dict[str, list[Any]] = {}
+        for tr in tool_responses:
+            tool_invoke_meta_agg.setdefault(tr["tool_call_name"], []).append(tr["meta"])
+            observation_agg.setdefault(tr["tool_call_name"], []).append(tr["tool_response"])
+        tool_invoke_meta = {k: (v[0] if len(v) == 1 else v) for k, v in tool_invoke_meta_agg.items()}
+        observation = {k: (v[0] if len(v) == 1 else v) for k, v in observation_agg.items()}
         self.save_agent_thought(
             agent_thought_id=agent_thought_id,
             tool_name="",
             tool_input="",
             thought="",
-            tool_invoke_meta={tr["tool_call_name"]: tr["meta"] for tr in tool_responses},
-            observation={tr["tool_call_name"]: tr["tool_response"] for tr in tool_responses},
+            tool_invoke_meta=tool_invoke_meta,
+            observation=observation,
             answer=final_answer,
             messages_ids=message_file_ids,
         )
