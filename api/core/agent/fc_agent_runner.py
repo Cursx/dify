@@ -227,10 +227,9 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             for tool_call_id, tool_call_name, tool_call_args in tool_calls:
                 tool_instance = tool_instances.get(tool_call_name)
                 if not tool_instance:
-                    tool_invoke_meta = ToolInvokeMeta.error_instance(
-                        f"there is not a tool named {tool_call_name}"
-                    )
-                    tool_invoke_response = f"there is not a tool named {tool_call_name}"
+                    error_message = f"there is not a tool named {tool_call_name}"
+                    tool_invoke_meta = ToolInvokeMeta.error_instance(error_message)
+                    tool_invoke_response = error_message
                     tool_response = {
                         "tool_call_id": tool_call_id,
                         "tool_call_name": tool_call_name,
