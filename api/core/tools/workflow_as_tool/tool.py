@@ -127,7 +127,7 @@ class WorkflowTool(Tool):
         if return_direct_flag and isinstance(outputs, dict):
             v = outputs.get("text")
             if isinstance(v, str):
-                direct_text = v
+                direct_text = outputs.pop("text")
 
         if direct_text is not None:
             yield self.create_text_message(direct_text)
