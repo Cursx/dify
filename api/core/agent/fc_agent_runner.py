@@ -426,6 +426,9 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         prompt_messages: list[PromptMessage],
         usage: LLMUsage,
     ) -> Generator[LLMResultChunk, None, None]:
+        def _flatten(agg_dict: dict[str, list[Any]]) -> dict[str, Any]:
+            return {k: (v[0] if len(v) == 1 else v) for k, v in agg_dict.items()}
+
         final_answer = "\n".join(
             [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
         )
@@ -436,9 +439,9 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             tool_invoke_meta_agg.setdefault(tr["tool_call_name"], []).append(tr["meta"])
             observation_agg.setdefault(tr["tool_call_name"], []).append(tr["tool_response"])
             tool_input_agg.setdefault(tr["tool_call_name"], []).append(tr.get("tool_call_args", {}))
-        tool_invoke_meta = {k: (v[0] if len(v) == 1 else v) for k, v in tool_invoke_meta_agg.items()}
-        observation = {k: (v[0] if len(v) == 1 else v) for k, v in observation_agg.items()}
-        tool_input = {k: (v[0] if len(v) == 1 else v) for k, v in tool_input_agg.items()}
+        tool_invoke_meta = _flatten(tool_invoke_meta_agg)
+        observation = _flatten(observation_agg)
+        tool_input = _flatten(tool_input_agg)
         tool_name = ";".join(sorted({tr["tool_call_name"] for tr in tool_responses}))
         self.save_agent_thought(
             agent_thought_id=agent_thought_id,
