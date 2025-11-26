@@ -257,12 +257,13 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                         # add message file ids
                         message_file_ids.append(message_file_id)
 
-                    tool_response = {
-                        "tool_call_id": tool_call_id,
-                        "tool_call_name": tool_call_name,
-                        "tool_response": tool_invoke_response,
-                        "meta": tool_invoke_meta.to_dict(),
-                    }
+                tool_response = {
+                    "tool_call_id": tool_call_id,
+                    "tool_call_name": tool_call_name,
+                    "tool_response": tool_invoke_response,
+                    "tool_call_args": tool_call_args,
+                    "meta": tool_invoke_meta.to_dict(),
+                }
 
                 tool_responses.append(tool_response)
                 # check direct return flag
@@ -276,6 +277,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     yield from self._handle_direct_return(
                         agent_thought_id,
                         tool_responses,
+                        response or "",
                         message_file_ids,
                         prompt_messages,
                         llm_final_usage,
@@ -419,6 +421,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         self,
         agent_thought_id: str,
         tool_responses: list[dict[str, Any]],
+        thought: str,
         message_file_ids: list[str],
         prompt_messages: list[PromptMessage],
         usage: LLMUsage,
@@ -428,16 +431,20 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         )
         tool_invoke_meta_agg: dict[str, list[Any]] = {}
         observation_agg: dict[str, list[Any]] = {}
+        tool_input_agg: dict[str, list[Any]] = {}
         for tr in tool_responses:
             tool_invoke_meta_agg.setdefault(tr["tool_call_name"], []).append(tr["meta"])
             observation_agg.setdefault(tr["tool_call_name"], []).append(tr["tool_response"])
+            tool_input_agg.setdefault(tr["tool_call_name"], []).append(tr.get("tool_call_args", {}))
         tool_invoke_meta = {k: (v[0] if len(v) == 1 else v) for k, v in tool_invoke_meta_agg.items()}
         observation = {k: (v[0] if len(v) == 1 else v) for k, v in observation_agg.items()}
+        tool_input = {k: (v[0] if len(v) == 1 else v) for k, v in tool_input_agg.items()}
+        tool_name = ";".join(sorted({tr["tool_call_name"] for tr in tool_responses}))
         self.save_agent_thought(
             agent_thought_id=agent_thought_id,
-            tool_name="",
-            tool_input="",
-            thought="",
+            tool_name=tool_name,
+            tool_input=tool_input,
+            thought=thought,
             tool_invoke_meta=tool_invoke_meta,
             observation=observation,
             answer=final_answer,
