@@ -126,7 +126,7 @@ class WorkflowTool(Tool):
         direct_text = None
         if return_direct_flag and isinstance(outputs, dict):
             v = outputs.get("text")
-            if isinstance(v, str) and v.strip():
+            if isinstance(v, str):
                 direct_text = v
 
         if direct_text is not None:
