@@ -121,11 +121,24 @@ class WorkflowTool(Tool):
             if isinstance(raw_flag, str):
                 return_direct_flag = raw_flag.strip().lower() in {"true", "1", "yes", "y"}
             else:
-                return_direct_flag = bool(raw_flag)
+                try:
+                    return_direct_flag = bool(raw_flag)
+                except Exception:
+                    return_direct_flag = False
 
         self._latest_usage = self._derive_usage_from_result(data)
 
-        yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+        direct_text = None
+        if return_direct_flag and isinstance(outputs, dict):
+            v = outputs.get("text")
+            if isinstance(v, str) and v.strip():
+                direct_text = v
+
+        if direct_text is not None:
+            yield self.create_text_message(direct_text)
+        else:
+            yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+
         yield self.create_json_message(outputs, suppress_output=True)
         if return_direct_flag:
             yield self.create_variable_message("return_direct", True)
