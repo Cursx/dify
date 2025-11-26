@@ -267,29 +267,30 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                 tool_responses.append(tool_response)
                 # check direct return flag
                 direct_flag = (tool_invoke_meta.extra or {}).get("return_direct", False)
+                tool_response["direct_flag"] = direct_flag
 
-                if tool_response["tool_response"] is not None and not direct_flag:
-                    self._current_thoughts.append(
-                        ToolPromptMessage(
-                            content=str(tool_response["tool_response"]),
-                            tool_call_id=tool_call_id,
-                            name=tool_call_name,
-                        )
-                    )
-
-                if direct_flag:
+            if len(tool_responses) > 0:
+                all_direct = all(tr.get("direct_flag") is True for tr in tool_responses)
+                if all_direct:
                     llm_final_usage = llm_usage.get("usage") or LLMUsage.empty_usage()
                     yield from self._handle_direct_return(
                         agent_thought_id,
                         tool_responses,
-                        tool_invoke_response,
                         message_file_ids,
                         prompt_messages,
                         llm_final_usage,
                     )
                     return
 
-            if len(tool_responses) > 0:
+                for tr in tool_responses:
+                    if tr["tool_response"] is not None:
+                        self._current_thoughts.append(
+                            ToolPromptMessage(
+                                content=str(tr["tool_response"]),
+                                tool_call_id=tr["tool_call_id"],
+                                name=tr["tool_call_name"],
+                            )
+                        )
                 # save agent thought
                 self.save_agent_thought(
                     agent_thought_id=agent_thought_id,
@@ -418,11 +419,13 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         self,
         agent_thought_id: str,
         tool_responses: list[dict[str, Any]],
-        tool_invoke_response: str | None,
         message_file_ids: list[str],
         prompt_messages: list[PromptMessage],
         usage: LLMUsage,
     ) -> Generator[LLMResultChunk, None, None]:
+        final_answer = "\n".join(
+            [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
+        )
         self.save_agent_thought(
             agent_thought_id=agent_thought_id,
             tool_name="",
@@ -430,13 +433,12 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             thought="",
             tool_invoke_meta={tr["tool_call_name"]: tr["meta"] for tr in tool_responses},
             observation={tr["tool_call_name"]: tr["tool_response"] for tr in tool_responses},
-            answer=str(tool_invoke_response or ""),
+            answer=final_answer,
             messages_ids=message_file_ids,
         )
         self.queue_manager.publish(
             QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
         )
-        final_answer = str(tool_invoke_response or "")
         yield from self._yield_final_answer(prompt_messages, final_answer, usage)
 
     def _init_system_message(self, prompt_template: str, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
