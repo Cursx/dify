@@ -227,12 +227,19 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             for tool_call_id, tool_call_name, tool_call_args in tool_calls:
                 tool_instance = tool_instances.get(tool_call_name)
                 if not tool_instance:
+                    tool_invoke_meta = ToolInvokeMeta.error_instance(
+                        f"there is not a tool named {tool_call_name}"
+                    )
+                    tool_invoke_response = f"there is not a tool named {tool_call_name}"
                     tool_response = {
                         "tool_call_id": tool_call_id,
                         "tool_call_name": tool_call_name,
-                        "tool_response": f"there is not a tool named {tool_call_name}",
-                        "meta": ToolInvokeMeta.error_instance(f"there is not a tool named {tool_call_name}").to_dict(),
+                        "tool_response": tool_invoke_response,
+                        "tool_call_args": tool_call_args,
+                        "meta": tool_invoke_meta.to_dict(),
                     }
+                    tool_response["direct_flag"] = False
+                    tool_responses.append(tool_response)
                 else:
                     # invoke tool
                     tool_invoke_response, message_files, tool_invoke_meta = ToolEngine.agent_invoke(
@@ -257,18 +264,16 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                         # add message file ids
                         message_file_ids.append(message_file_id)
 
-                tool_response = {
-                    "tool_call_id": tool_call_id,
-                    "tool_call_name": tool_call_name,
-                    "tool_response": tool_invoke_response,
-                    "tool_call_args": tool_call_args,
-                    "meta": tool_invoke_meta.to_dict(),
-                }
-
-                tool_responses.append(tool_response)
-                # check direct return flag
-                direct_flag = (tool_invoke_meta.extra or {}).get("return_direct", False)
-                tool_response["direct_flag"] = direct_flag
+                    tool_response = {
+                        "tool_call_id": tool_call_id,
+                        "tool_call_name": tool_call_name,
+                        "tool_response": tool_invoke_response,
+                        "tool_call_args": tool_call_args,
+                        "meta": tool_invoke_meta.to_dict(),
+                    }
+                    direct_flag = bool((tool_invoke_meta.extra or {}).get("return_direct", False))
+                    tool_response["direct_flag"] = direct_flag
+                    tool_responses.append(tool_response)
 
             if len(tool_responses) > 0:
                 all_direct = all(tr.get("direct_flag") is True for tr in tool_responses)
