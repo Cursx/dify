@@ -230,14 +230,14 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     error_message = f"there is not a tool named {tool_call_name}"
                     tool_invoke_meta = ToolInvokeMeta.error_instance(error_message)
                     tool_invoke_response = error_message
-                    tool_response = {
-                        "tool_call_id": tool_call_id,
-                        "tool_call_name": tool_call_name,
-                        "tool_response": tool_invoke_response,
-                        "tool_call_args": tool_call_args,
-                        "meta": tool_invoke_meta.to_dict(),
-                    }
-                    tool_response["direct_flag"] = False
+                    tool_response = self._create_tool_response(
+                        tool_call_id,
+                        tool_call_name,
+                        tool_call_args,
+                        tool_invoke_response,
+                        tool_invoke_meta,
+                        False,
+                    )
                     tool_responses.append(tool_response)
                 else:
                     # invoke tool
@@ -263,15 +263,15 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                         # add message file ids
                         message_file_ids.append(message_file_id)
 
-                    tool_response = {
-                        "tool_call_id": tool_call_id,
-                        "tool_call_name": tool_call_name,
-                        "tool_response": tool_invoke_response,
-                        "tool_call_args": tool_call_args,
-                        "meta": tool_invoke_meta.to_dict(),
-                    }
                     direct_flag = bool((tool_invoke_meta.extra or {}).get("return_direct", False))
-                    tool_response["direct_flag"] = direct_flag
+                    tool_response = self._create_tool_response(
+                        tool_call_id,
+                        tool_call_name,
+                        tool_call_args,
+                        tool_invoke_response,
+                        tool_invoke_meta,
+                        direct_flag,
+                    )
                     tool_responses.append(tool_response)
 
             if len(tool_responses) > 0:
@@ -420,6 +420,24 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                 usage=usage,
             ),
         )
+
+    def _create_tool_response(
+        self,
+        tool_call_id: str,
+        tool_call_name: str,
+        tool_call_args: dict[str, Any],
+        tool_invoke_response: str | None,
+        tool_invoke_meta: ToolInvokeMeta,
+        direct_flag: bool,
+    ) -> dict[str, Any]:
+        return {
+            "tool_call_id": tool_call_id,
+            "tool_call_name": tool_call_name,
+            "tool_response": tool_invoke_response,
+            "tool_call_args": tool_call_args,
+            "meta": tool_invoke_meta.to_dict(),
+            "direct_flag": direct_flag,
+        }
 
     def _handle_direct_return(
         self,
