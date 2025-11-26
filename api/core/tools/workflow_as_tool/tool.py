@@ -119,7 +119,7 @@ class WorkflowTool(Tool):
         self._latest_usage = self._derive_usage_from_result(data)
 
         direct_text = None
-        if return_direct_flag and isinstance(outputs, dict):
+        if return_direct_flag:
             v = outputs.get("text")
             if isinstance(v, str):
                 direct_text = outputs.pop("text")
