@@ -1,79 +1,63 @@
 import json
-from abc import ABC, abstractmethod
-from collections.abc import Generator, Mapping, Sequence
-from typing import Any
+import logging
+from collections.abc import Generator
+from copy import deepcopy
+from typing import Any, Union
 
 from core.agent.base_agent_runner import BaseAgentRunner
-from core.agent.entities import AgentScratchpadUnit
-from core.agent.output_parser.cot_output_parser import CotAgentOutputParser
 from core.app.apps.base_app_queue_manager import PublishFrom
 from core.app.entities.queue_entities import QueueAgentThoughtEvent, QueueMessageEndEvent, QueueMessageFileEvent
-from core.model_runtime.entities.llm_entities import LLMResult, LLMResultChunk, LLMResultChunkDelta, LLMUsage
-from core.model_runtime.entities.message_entities import (
+from core.file import file_manager
+from core.model_runtime.entities import (
     AssistantPromptMessage,
+    LLMResult,
+    LLMResultChunk,
+    LLMResultChunkDelta,
+    LLMUsage,
     PromptMessage,
-    PromptMessageTool,
+    PromptMessageContentType,
+    SystemPromptMessage,
+    TextPromptMessageContent,
     ToolPromptMessage,
     UserPromptMessage,
 )
-from core.ops.ops_trace_manager import TraceQueueManager
+from core.model_runtime.entities.message_entities import ImagePromptMessageContent, PromptMessageContentUnionTypes
 from core.prompt.agent_history_prompt_transform import AgentHistoryPromptTransform
-from core.tools.__base.tool import Tool
 from core.tools.entities.tool_entities import ToolInvokeMeta
 from core.tools.tool_engine import ToolEngine
 from models.model import Message
 
+logger = logging.getLogger(__name__)
 
-class CotAgentRunner(BaseAgentRunner, ABC):
-    _is_first_iteration = True
-    _ignore_observation_providers = ["wenxin"]
-    _historic_prompt_messages: list[PromptMessage]
-    _agent_scratchpad: list[AgentScratchpadUnit]
-    _instruction: str
-    _query: str
-    _prompt_messages_tools: Sequence[PromptMessageTool]
 
-    def run(
-        self,
-        message: Message,
-        query: str,
-        inputs: Mapping[str, str],
-    ) -> Generator:
+class FunctionCallAgentRunner(BaseAgentRunner):
+    def run(self, message: Message, query: str, **kwargs: Any) -> Generator[LLMResultChunk, None, None]:
         """
-        Run Cot agent application
+        Run FunctionCall agent application
         """
-
+        self.query = query
         app_generate_entity = self.application_generate_entity
-        self._repack_app_generate_entity(app_generate_entity)
-        self._init_react_state(query)
-
-        trace_manager = app_generate_entity.trace_manager
-
-        # check model mode
-        if "Observation" not in app_generate_entity.model_conf.stop:
-            if app_generate_entity.model_conf.provider not in self._ignore_observation_providers:
-                app_generate_entity.model_conf.stop.append("Observation")
 
         app_config = self.app_config
-        assert app_config.agent
+        assert app_config is not None, "app_config is required"
+        assert app_config.agent is not None, "app_config.agent is required"
 
-        # init instruction
-        inputs = inputs or {}
-        instruction = app_config.prompt_template.simple_prompt_template or ""
-        self._instruction = self._fill_in_inputs_from_external_data_tools(instruction, inputs)
+        # convert tools into ModelRuntime Tool format
+        tool_instances, prompt_messages_tools = self._init_prompt_tools()
+
+        assert app_config.agent
 
         iteration_step = 1
         max_iteration_steps = min(app_config.agent.max_iteration, 99) + 1
 
-        # convert tools into ModelRuntime Tool format
-        tool_instances, prompt_messages_tools = self._init_prompt_tools()
-        self._prompt_messages_tools = prompt_messages_tools
-
+        # continue to run until there is not any tool call
         function_call_state = True
         llm_usage: dict[str, LLMUsage | None] = {"usage": None}
         final_answer = ""
         prompt_messages: list = []  # Initialize prompt_messages
-        agent_thought_id = ""  # Initialize agent_thought_id
+
+        # get tracing instance
+        trace_manager = app_generate_entity.trace_manager
 
         def increase_usage(final_llm_usage_dict: dict[str, LLMUsage | None], usage: LLMUsage):
             if not final_llm_usage_dict["usage"]:
@@ -90,347 +74,463 @@ class CotAgentRunner(BaseAgentRunner, ABC):
         model_instance = self.model_instance
 
         while function_call_state and iteration_step <= max_iteration_steps:
-            # continue to run until there is not any tool call
             function_call_state = False
 
             if iteration_step == max_iteration_steps:
                 # the last iteration, remove all tools
-                self._prompt_messages_tools = []
+                prompt_messages_tools = []
 
             message_file_ids: list[str] = []
-
             agent_thought_id = self.create_agent_thought(
                 message_id=message.id, message="", tool_name="", tool_input="", messages_ids=message_file_ids
             )
-
-            if iteration_step > 1:
-                self.queue_manager.publish(
-                    QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
-                )
 
             # recalc llm max tokens
             prompt_messages = self._organize_prompt_messages()
             self.recalc_llm_max_tokens(self.model_config, prompt_messages)
             # invoke model
-            chunks = model_instance.invoke_llm(
+            chunks: Union[Generator[LLMResultChunk, None, None], LLMResult] = model_instance.invoke_llm(
                 prompt_messages=prompt_messages,
                 model_parameters=app_generate_entity.model_conf.parameters,
-                tools=[],
+                tools=prompt_messages_tools,
                 stop=app_generate_entity.model_conf.stop,
-                stream=True,
+                stream=self.stream_tool_call,
                 user=self.user_id,
                 callbacks=[],
             )
 
-            usage_dict: dict[str, LLMUsage | None] = {}
-            react_chunks = CotAgentOutputParser.handle_react_stream_output(chunks, usage_dict)
-            scratchpad = AgentScratchpadUnit(
-                agent_response="",
-                thought="",
-                action_str="",
-                observation="",
-                action=None,
-            )
+            tool_calls: list[tuple[str, str, dict[str, Any]]] = []
 
-            # publish agent thought if it's first iteration
-            if iteration_step == 1:
+            # save full response
+            response = ""
+
+            # save tool call names and inputs
+            tool_call_names = ""
+            tool_call_inputs = ""
+
+            current_llm_usage = None
+
+            if isinstance(chunks, Generator):
+                is_first_chunk = True
+                for chunk in chunks:
+                    if is_first_chunk:
+                        self.queue_manager.publish(
+                            QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
+                        )
+                        is_first_chunk = False
+                    # check if there is any tool call
+                    if self.check_tool_calls(chunk):
+                        function_call_state = True
+                        tool_calls.extend(self.extract_tool_calls(chunk) or [])
+                        tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
+                        try:
+                            tool_call_inputs = json.dumps(
+                                {tool_call[1]: tool_call[2] for tool_call in tool_calls}, ensure_ascii=False
+                            )
+                        except TypeError:
+                            # fallback: force ASCII to handle non-serializable objects
+                            tool_call_inputs = json.dumps({tool_call[1]: tool_call[2] for tool_call in tool_calls})
+
+                    if chunk.delta.message and chunk.delta.message.content:
+                        if isinstance(chunk.delta.message.content, list):
+                            for content in chunk.delta.message.content:
+                                response += content.data
+                        else:
+                            response += str(chunk.delta.message.content)
+
+                    if chunk.delta.usage:
+                        increase_usage(llm_usage, chunk.delta.usage)
+                        current_llm_usage = chunk.delta.usage
+
+                    yield chunk
+            else:
+                result = chunks
+                # check if there is any tool call
+                if self.check_blocking_tool_calls(result):
+                    function_call_state = True
+                    tool_calls.extend(self.extract_blocking_tool_calls(result) or [])
+                    tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
+                    try:
+                        tool_call_inputs = json.dumps(
+                            {tool_call[1]: tool_call[2] for tool_call in tool_calls}, ensure_ascii=False
+                        )
+                    except TypeError:
+                        # fallback: force ASCII to handle non-serializable objects
+                        tool_call_inputs = json.dumps({tool_call[1]: tool_call[2] for tool_call in tool_calls})
+
+                if result.usage:
+                    increase_usage(llm_usage, result.usage)
+                    current_llm_usage = result.usage
+
+                if result.message and result.message.content:
+                    if isinstance(result.message.content, list):
+                        for content in result.message.content:
+                            response += content.data
+                    else:
+                        response += str(result.message.content)
+
+                if not result.message.content:
+                    result.message.content = ""
+
                 self.queue_manager.publish(
                     QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
                 )
 
-            for chunk in react_chunks:
-                if isinstance(chunk, AgentScratchpadUnit.Action):
-                    action = chunk
-                    # detect action
-                    assert scratchpad.agent_response is not None
-                    scratchpad.agent_response += json.dumps(chunk.model_dump())
-                    scratchpad.action_str = json.dumps(chunk.model_dump())
-                    scratchpad.action = action
-                else:
-                    assert scratchpad.agent_response is not None
-                    scratchpad.agent_response += chunk
-                    assert scratchpad.thought is not None
-                    scratchpad.thought += chunk
-                    yield LLMResultChunk(
-                        model=self.model_config.model,
-                        prompt_messages=prompt_messages,
-                        system_fingerprint="",
-                        delta=LLMResultChunkDelta(index=0, message=AssistantPromptMessage(content=chunk), usage=None),
+                yield LLMResultChunk(
+                    model=model_instance.model,
+                    prompt_messages=result.prompt_messages,
+                    system_fingerprint=result.system_fingerprint,
+                    delta=LLMResultChunkDelta(
+                        index=0,
+                        message=result.message,
+                        usage=result.usage,
+                    ),
+                )
+
+            assistant_message = AssistantPromptMessage(content="", tool_calls=[])
+            if tool_calls:
+                assistant_message.tool_calls = [
+                    AssistantPromptMessage.ToolCall(
+                        id=tool_call[0],
+                        type="function",
+                        function=AssistantPromptMessage.ToolCall.ToolCallFunction(
+                            name=tool_call[1], arguments=json.dumps(tool_call[2], ensure_ascii=False)
+                        ),
                     )
-
-            assert scratchpad.thought is not None
-            scratchpad.thought = scratchpad.thought.strip() or "I am thinking about how to help you"
-            self._agent_scratchpad.append(scratchpad)
-
-            # get llm usage
-            if "usage" in usage_dict:
-                if usage_dict["usage"] is not None:
-                    increase_usage(llm_usage, usage_dict["usage"])
+                    for tool_call in tool_calls
+                ]
             else:
-                usage_dict["usage"] = LLMUsage.empty_usage()
+                assistant_message.content = response
 
+            self._current_thoughts.append(assistant_message)
+
+            # save thought
             self.save_agent_thought(
                 agent_thought_id=agent_thought_id,
-                tool_name=(scratchpad.action.action_name if scratchpad.action and not scratchpad.is_final() else ""),
-                tool_input={scratchpad.action.action_name: scratchpad.action.action_input} if scratchpad.action else {},
-                tool_invoke_meta={},
-                thought=scratchpad.thought or "",
-                observation="",
-                answer=scratchpad.agent_response or "",
+                tool_name=tool_call_names,
+                tool_input=tool_call_inputs,
+                thought=response,
+                tool_invoke_meta=None,
+                observation=None,
+                answer=response,
                 messages_ids=[],
-                llm_usage=usage_dict["usage"],
+                llm_usage=current_llm_usage,
+            )
+            self.queue_manager.publish(
+                QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
             )
 
-            if not scratchpad.is_final():
+            final_answer += response + "\n"
+
+            # call tools
+            tool_responses = []
+            for tool_call_id, tool_call_name, tool_call_args in tool_calls:
+                tool_instance = tool_instances.get(tool_call_name)
+                if not tool_instance:
+                    tool_response = {
+                        "tool_call_id": tool_call_id,
+                        "tool_call_name": tool_call_name,
+                        "tool_response": f"there is not a tool named {tool_call_name}",
+                        "meta": ToolInvokeMeta.error_instance(f"there is not a tool named {tool_call_name}").to_dict(),
+                    }
+                else:
+                    # invoke tool
+                    tool_invoke_response, message_files, tool_invoke_meta = ToolEngine.agent_invoke(
+                        tool=tool_instance,
+                        tool_parameters=tool_call_args,
+                        user_id=self.user_id,
+                        tenant_id=self.tenant_id,
+                        message=self.message,
+                        invoke_from=self.application_generate_entity.invoke_from,
+                        agent_tool_callback=self.agent_callback,
+                        trace_manager=trace_manager,
+                        app_id=self.application_generate_entity.app_config.app_id,
+                        message_id=self.message.id,
+                        conversation_id=self.conversation.id,
+                    )
+                    # publish files
+                    for message_file_id in message_files:
+                        # publish message file
+                        self.queue_manager.publish(
+                            QueueMessageFileEvent(message_file_id=message_file_id), PublishFrom.APPLICATION_MANAGER
+                        )
+                        # add message file ids
+                        message_file_ids.append(message_file_id)
+
+                    tool_response = {
+                        "tool_call_id": tool_call_id,
+                        "tool_call_name": tool_call_name,
+                        "tool_response": tool_invoke_response,
+                        "meta": tool_invoke_meta.to_dict(),
+                    }
+
+                tool_responses.append(tool_response)
+                # check direct return flag
+                direct_flag = (tool_invoke_meta.extra or {}).get("return_direct", False)
+                tool_response["direct_flag"] = direct_flag
+
+            if len(tool_responses) > 0:
+                all_direct = all(tr.get("direct_flag") is True for tr in tool_responses)
+                if all_direct:
+                    llm_final_usage = llm_usage.get("usage") or LLMUsage.empty_usage()
+                    yield from self._handle_direct_return(
+                        agent_thought_id,
+                        tool_responses,
+                        message_file_ids,
+                        prompt_messages,
+                        llm_final_usage,
+                    )
+                    return
+
+                for tr in tool_responses:
+                    if tr["tool_response"] is not None:
+                        self._current_thoughts.append(
+                            ToolPromptMessage(
+                                content=str(tr["tool_response"]),
+                                tool_call_id=tr["tool_call_id"],
+                                name=tr["tool_call_name"],
+                            )
+                        )
+                # save agent thought
+                self.save_agent_thought(
+                    agent_thought_id=agent_thought_id,
+                    tool_name="",
+                    tool_input="",
+                    thought="",
+                    tool_invoke_meta={
+                        tool_response["tool_call_name"]: tool_response["meta"] for tool_response in tool_responses
+                    },
+                    observation={
+                        tool_response["tool_call_name"]: tool_response["tool_response"]
+                        for tool_response in tool_responses
+                    },
+                    answer="",
+                    messages_ids=message_file_ids,
+                )
                 self.queue_manager.publish(
                     QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
                 )
 
-            if not scratchpad.action:
-                # failed to extract action, return final answer directly
-                final_answer = ""
-            else:
-                if scratchpad.action.action_name.lower() == "final answer":
-                    # action is final answer, return final answer directly
-                    try:
-                        if isinstance(scratchpad.action.action_input, dict):
-                            final_answer = json.dumps(scratchpad.action.action_input, ensure_ascii=False)
-                        elif isinstance(scratchpad.action.action_input, str):
-                            final_answer = scratchpad.action.action_input
-                        else:
-                            final_answer = f"{scratchpad.action.action_input}"
-                    except TypeError:
-                        final_answer = f"{scratchpad.action.action_input}"
-                else:
-                    # action is tool call, invoke tool
-                    tool_invoke_response, tool_invoke_meta = self._handle_invoke_action(
-                        action=scratchpad.action,
-                        tool_instances=tool_instances,
-                        message_file_ids=message_file_ids,
-                        trace_manager=trace_manager,
-                    )
-                    scratchpad.observation = tool_invoke_response
-                    scratchpad.agent_response = tool_invoke_response
-
-                    # detect direct return
-                    direct_flag = (tool_invoke_meta.extra or {}).get("return_direct", False)
-
-                    self.save_agent_thought(
-                        agent_thought_id=agent_thought_id,
-                        tool_name=scratchpad.action.action_name,
-                        tool_input={scratchpad.action.action_name: scratchpad.action.action_input},
-                        thought=scratchpad.thought or "",
-                        observation={scratchpad.action.action_name: tool_invoke_response},
-                        tool_invoke_meta={scratchpad.action.action_name: tool_invoke_meta.to_dict()},
-                        answer=scratchpad.agent_response,
-                        messages_ids=message_file_ids,
-                        llm_usage=usage_dict["usage"],
-                    )
-
-                    self.queue_manager.publish(
-                        QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
-                    )
-
-                    if direct_flag:
-                        final_answer = str(tool_invoke_response or "")
-                        # keep function_call_state as False to end iterations
-                    else:
-                        function_call_state = True
-
-                # update prompt tool message
-                for prompt_tool in self._prompt_messages_tools:
-                    self.update_prompt_message_tool(tool_instances[prompt_tool.name], prompt_tool)
+            # update prompt tool
+            for prompt_tool in prompt_messages_tools:
+                self.update_prompt_message_tool(tool_instances[prompt_tool.name], prompt_tool)
 
             iteration_step += 1
 
-        yield LLMResultChunk(
-            model=model_instance.model,
-            prompt_messages=prompt_messages,
-            delta=LLMResultChunkDelta(
-                index=0, message=AssistantPromptMessage(content=final_answer), usage=llm_usage["usage"]
-            ),
-            system_fingerprint="",
+        yield from self._yield_final_answer(
+            prompt_messages,
+            final_answer,
+            llm_usage.get("usage") or LLMUsage.empty_usage(),
         )
 
-        # save agent thought
-        self.save_agent_thought(
-            agent_thought_id=agent_thought_id,
-            tool_name="",
-            tool_input={},
-            tool_invoke_meta={},
-            thought=final_answer,
-            observation={},
-            answer=final_answer,
-            messages_ids=[],
-        )
-        # publish end event
+    def check_tool_calls(self, llm_result_chunk: LLMResultChunk) -> bool:
+        """
+        Check if there is any tool call in llm result chunk
+        """
+        if llm_result_chunk.delta.message.tool_calls:
+            return True
+        return False
+
+    def check_blocking_tool_calls(self, llm_result: LLMResult) -> bool:
+        """
+        Check if there is any blocking tool call in llm result
+        """
+        if llm_result.message.tool_calls:
+            return True
+        return False
+
+    def extract_tool_calls(self, llm_result_chunk: LLMResultChunk) -> list[tuple[str, str, dict[str, Any]]]:
+        """
+        Extract tool calls from llm result chunk
+
+        Returns:
+            List[Tuple[str, str, Dict[str, Any]]]: [(tool_call_id, tool_call_name, tool_call_args)]
+        """
+        tool_calls = []
+        for prompt_message in llm_result_chunk.delta.message.tool_calls:
+            args = {}
+            if prompt_message.function.arguments != "":
+                args = json.loads(prompt_message.function.arguments)
+
+            tool_calls.append(
+                (
+                    prompt_message.id,
+                    prompt_message.function.name,
+                    args,
+                )
+            )
+
+        return tool_calls
+
+    def extract_blocking_tool_calls(self, llm_result: LLMResult) -> list[tuple[str, str, dict[str, Any]]]:
+        """
+        Extract blocking tool calls from llm result
+
+        Returns:
+            List[Tuple[str, str, Dict[str, Any]]]: [(tool_call_id, tool_call_name, tool_call_args)]
+        """
+        tool_calls = []
+        for prompt_message in llm_result.message.tool_calls:
+            args = {}
+            if prompt_message.function.arguments != "":
+                args = json.loads(prompt_message.function.arguments)
+
+            tool_calls.append(
+                (
+                    prompt_message.id,
+                    prompt_message.function.name,
+                    args,
+                )
+            )
+
+        return tool_calls
+
+    def _yield_final_answer(
+        self,
+        prompt_messages: list[PromptMessage],
+        final_answer: str,
+        usage: LLMUsage,
+    ) -> Generator[LLMResultChunk, None, None]:
         self.queue_manager.publish(
             QueueMessageEndEvent(
                 llm_result=LLMResult(
-                    model=model_instance.model,
+                    model=self.model_instance.model,
                     prompt_messages=prompt_messages,
                     message=AssistantPromptMessage(content=final_answer),
-                    usage=llm_usage["usage"] or LLMUsage.empty_usage(),
+                    usage=usage,
                     system_fingerprint="",
                 )
             ),
             PublishFrom.APPLICATION_MANAGER,
         )
 
-    def _handle_invoke_action(
-        self,
-        action: AgentScratchpadUnit.Action,
-        tool_instances: Mapping[str, Tool],
-        message_file_ids: list[str],
-        trace_manager: TraceQueueManager | None = None,
-    ) -> tuple[str, ToolInvokeMeta]:
-        """
-        handle invoke action
-        :param action: action
-        :param tool_instances: tool instances
-        :param message_file_ids: message file ids
-        :param trace_manager: trace manager
-        :return: observation, meta
-        """
-        # action is tool call, invoke tool
-        tool_call_name = action.action_name
-        tool_call_args = action.action_input
-        tool_instance = tool_instances.get(tool_call_name)
-
-        if not tool_instance:
-            answer = f"there is not a tool named {tool_call_name}"
-            return answer, ToolInvokeMeta.error_instance(answer)
-
-        if isinstance(tool_call_args, str):
-            try:
-                tool_call_args = json.loads(tool_call_args)
-            except json.JSONDecodeError:
-                pass
-
-        # invoke tool
-        tool_invoke_response, message_files, tool_invoke_meta = ToolEngine.agent_invoke(
-            tool=tool_instance,
-            tool_parameters=tool_call_args,
-            user_id=self.user_id,
-            tenant_id=self.tenant_id,
-            message=self.message,
-            invoke_from=self.application_generate_entity.invoke_from,
-            agent_tool_callback=self.agent_callback,
-            trace_manager=trace_manager,
+        yield LLMResultChunk(
+            model=self.model_instance.model,
+            prompt_messages=prompt_messages,
+            system_fingerprint="",
+            delta=LLMResultChunkDelta(
+                index=0,
+                message=AssistantPromptMessage(content=final_answer),
+                usage=usage,
+            ),
         )
 
-        # publish files
-        for message_file_id in message_files:
-            # publish message file
-            self.queue_manager.publish(
-                QueueMessageFileEvent(message_file_id=message_file_id), PublishFrom.APPLICATION_MANAGER
+    def _handle_direct_return(
+        self,
+        agent_thought_id: str,
+        tool_responses: list[dict[str, Any]],
+        message_file_ids: list[str],
+        prompt_messages: list[PromptMessage],
+        usage: LLMUsage,
+    ) -> Generator[LLMResultChunk, None, None]:
+        final_answer = "\n".join(
+            [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
+        )
+        tool_invoke_meta_agg: dict[str, list[Any]] = {}
+        observation_agg: dict[str, list[Any]] = {}
+        for tr in tool_responses:
+            tool_invoke_meta_agg.setdefault(tr["tool_call_name"], []).append(tr["meta"])
+            observation_agg.setdefault(tr["tool_call_name"], []).append(tr["tool_response"])
+        tool_invoke_meta = {k: (v[0] if len(v) == 1 else v) for k, v in tool_invoke_meta_agg.items()}
+        observation = {k: (v[0] if len(v) == 1 else v) for k, v in observation_agg.items()}
+        self.save_agent_thought(
+            agent_thought_id=agent_thought_id,
+            tool_name="",
+            tool_input="",
+            thought="",
+            tool_invoke_meta=tool_invoke_meta,
+            observation=observation,
+            answer=final_answer,
+            messages_ids=message_file_ids,
+        )
+        self.queue_manager.publish(
+            QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
+        )
+        yield from self._yield_final_answer(prompt_messages, final_answer, usage)
+
+    def _init_system_message(self, prompt_template: str, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
+        """
+        Initialize system message
+        """
+        if not prompt_messages and prompt_template:
+            return [
+                SystemPromptMessage(content=prompt_template),
+            ]
+
+        if prompt_messages and not isinstance(prompt_messages[0], SystemPromptMessage) and prompt_template:
+            prompt_messages.insert(0, SystemPromptMessage(content=prompt_template))
+
+        return prompt_messages or []
+
+    def _organize_user_query(self, query: str, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
+        """
+        Organize user query
+        """
+        if self.files:
+            # get image detail config
+            image_detail_config = (
+                self.application_generate_entity.file_upload_config.image_config.detail
+                if (
+                    self.application_generate_entity.file_upload_config
+                    and self.application_generate_entity.file_upload_config.image_config
+                )
+                else None
             )
-            # add message file ids
-            message_file_ids.append(message_file_id)
+            image_detail_config = image_detail_config or ImagePromptMessageContent.DETAIL.LOW
 
-        return tool_invoke_response, tool_invoke_meta
-
-    def _convert_dict_to_action(self, action: dict) -> AgentScratchpadUnit.Action:
-        """
-        convert dict to action
-        """
-        return AgentScratchpadUnit.Action(action_name=action["action"], action_input=action["action_input"])
-
-    def _fill_in_inputs_from_external_data_tools(self, instruction: str, inputs: Mapping[str, Any]) -> str:
-        """
-        fill in inputs from external data tools
-        """
-        for key, value in inputs.items():
-            try:
-                instruction = instruction.replace(f"{{{{{key}}}}}", str(value))
-            except Exception:
-                continue
-
-        return instruction
-
-    def _init_react_state(self, query):
-        """
-        init agent scratchpad
-        """
-        self._query = query
-        self._agent_scratchpad = []
-        self._historic_prompt_messages = self._organize_historic_prompt_messages()
-
-    @abstractmethod
-    def _organize_prompt_messages(self) -> list[PromptMessage]:
-        """
-        organize prompt messages
-        """
-
-    def _format_assistant_message(self, agent_scratchpad: list[AgentScratchpadUnit]) -> str:
-        """
-        format assistant message
-        """
-        message = ""
-        for scratchpad in agent_scratchpad:
-            if scratchpad.is_final():
-                message += f"Final Answer: {scratchpad.agent_response}"
-            else:
-                message += f"Thought: {scratchpad.thought}\n\n"
-                if scratchpad.action_str:
-                    message += f"Action: {scratchpad.action_str}\n\n"
-                if scratchpad.observation:
-                    message += f"Observation: {scratchpad.observation}\n\n"
-
-        return message
-
-    def _organize_historic_prompt_messages(
-        self, current_session_messages: list[PromptMessage] | None = None
-    ) -> list[PromptMessage]:
-        """
-        organize historic prompt messages
-        """
-        result: list[PromptMessage] = []
-        scratchpads: list[AgentScratchpadUnit] = []
-        current_scratchpad: AgentScratchpadUnit | None = None
-
-        for message in self.history_prompt_messages:
-            if isinstance(message, AssistantPromptMessage):
-                if not current_scratchpad:
-                    assert isinstance(message.content, str)
-                    current_scratchpad = AgentScratchpadUnit(
-                        agent_response=message.content,
-                        thought=message.content or "I am thinking about how to help you",
-                        action_str="",
-                        action=None,
-                        observation=None,
+            prompt_message_contents: list[PromptMessageContentUnionTypes] = []
+            for file in self.files:
+                prompt_message_contents.append(
+                    file_manager.to_prompt_message_content(
+                        file,
+                        image_detail_config=image_detail_config,
                     )
-                    scratchpads.append(current_scratchpad)
-                if message.tool_calls:
-                    try:
-                        current_scratchpad.action = AgentScratchpadUnit.Action(
-                            action_name=message.tool_calls[0].function.name,
-                            action_input=json.loads(message.tool_calls[0].function.arguments),
-                        )
-                        current_scratchpad.action_str = json.dumps(current_scratchpad.action.to_dict())
-                    except:
-                        pass
-            elif isinstance(message, ToolPromptMessage):
-                if current_scratchpad:
-                    assert isinstance(message.content, str)
-                    current_scratchpad.observation = message.content
-                else:
-                    raise NotImplementedError("expected str type")
-            elif isinstance(message, UserPromptMessage):
-                if scratchpads:
-                    result.append(AssistantPromptMessage(content=self._format_assistant_message(scratchpads)))
-                    scratchpads = []
-                    current_scratchpad = None
+                )
+            prompt_message_contents.append(TextPromptMessageContent(data=query))
 
-                result.append(message)
+            prompt_messages.append(UserPromptMessage(content=prompt_message_contents))
+        else:
+            prompt_messages.append(UserPromptMessage(content=query))
 
-        if scratchpads:
-            result.append(AssistantPromptMessage(content=self._format_assistant_message(scratchpads)))
+        return prompt_messages
 
-        historic_prompts = AgentHistoryPromptTransform(
+    def _clear_user_prompt_image_messages(self, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
+        """
+        As for now, gpt supports both fc and vision at the first iteration.
+        We need to remove the image messages from the prompt messages at the first iteration.
+        """
+        prompt_messages = deepcopy(prompt_messages)
+
+        for prompt_message in prompt_messages:
+            if isinstance(prompt_message, UserPromptMessage):
+                if isinstance(prompt_message.content, list):
+                    prompt_message.content = "\n".join(
+                        [
+                            content.data
+                            if content.type == PromptMessageContentType.TEXT
+                            else "[image]"
+                            if content.type == PromptMessageContentType.IMAGE
+                            else "[file]"
+                            for content in prompt_message.content
+                        ]
+                    )
+
+        return prompt_messages
+
+    def _organize_prompt_messages(self):
+        prompt_template = self.app_config.prompt_template.simple_prompt_template or ""
+        self.history_prompt_messages = self._init_system_message(prompt_template, self.history_prompt_messages)
+        query_prompt_messages = self._organize_user_query(self.query or "", [])
+
+        self.history_prompt_messages = AgentHistoryPromptTransform(
             model_config=self.model_config,
-            prompt_messages=current_session_messages or [],
-            history_messages=result,
+            prompt_messages=[*query_prompt_messages, *self._current_thoughts],
+            history_messages=self.history_prompt_messages,
             memory=self.memory,
         ).get_prompt()
-        return historic_prompts
+
+        prompt_messages = [*self.history_prompt_messages, *query_prompt_messages, *self._current_thoughts]
+        if len(self._current_thoughts) != 0:
+            # clear messages after the first iteration
+            prompt_messages = self._clear_user_prompt_image_messages(prompt_messages)
+        return prompt_messages
