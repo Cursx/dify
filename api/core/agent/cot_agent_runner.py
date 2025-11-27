@@ -235,30 +235,11 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                     if direct_flag:
                         final_answer = str(tool_invoke_response or "")
                         is_final_answer_from_tool = True
-                        
-                        # emit final answer immediately to preserve UI order (tool usage → answer)
-                        yield LLMResultChunk(
-                            model=model_instance.model,
+
+                        yield from self._yield_final_answer(
                             prompt_messages=prompt_messages,
-                            delta=LLMResultChunkDelta(
-                                index=0,
-                                message=AssistantPromptMessage(content=final_answer),
-                                usage=llm_usage["usage"],
-                            ),
-                            system_fingerprint="",
-                        )
-                        
-                        self.queue_manager.publish(
-                            QueueMessageEndEvent(
-                                llm_result=LLMResult(
-                                    model=model_instance.model,
-                                    prompt_messages=prompt_messages,
-                                    message=AssistantPromptMessage(content=final_answer),
-                                    usage=llm_usage["usage"] or LLMUsage.empty_usage(),
-                                    system_fingerprint="",
-                                )
-                            ),
-                            PublishFrom.APPLICATION_MANAGER,
+                            final_answer=final_answer,
+                            usage=llm_usage["usage"],
                         )
                         return
                     else:
@@ -270,13 +251,10 @@ class CotAgentRunner(BaseAgentRunner, ABC):
 
             iteration_step += 1
 
-        yield LLMResultChunk(
-            model=model_instance.model,
+        yield from self._yield_final_answer(
             prompt_messages=prompt_messages,
-            delta=LLMResultChunkDelta(
-                index=0, message=AssistantPromptMessage(content=final_answer), usage=llm_usage["usage"]
-            ),
-            system_fingerprint="",
+            final_answer=final_answer,
+            usage=llm_usage["usage"],
         )
 
         # save agent thought only when final answer is NOT directly from tool
@@ -291,14 +269,32 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                 answer=final_answer,
                 messages_ids=[],
             )
-        # publish end event
+    
+    def _yield_final_answer(
+        self,
+        prompt_messages: list,
+        final_answer: str,
+        usage: LLMUsage | None,
+    ) -> Generator[LLMResultChunk, None, None]:
+        """Yields the final answer chunk and publishes the end event."""
+        yield LLMResultChunk(
+            model=self.model_instance.model,
+            prompt_messages=prompt_messages,
+            delta=LLMResultChunkDelta(
+                index=0,
+                message=AssistantPromptMessage(content=final_answer),
+                usage=usage,
+            ),
+            system_fingerprint="",
+        )
+
         self.queue_manager.publish(
             QueueMessageEndEvent(
                 llm_result=LLMResult(
-                    model=model_instance.model,
+                    model=self.model_instance.model,
                     prompt_messages=prompt_messages,
                     message=AssistantPromptMessage(content=final_answer),
-                    usage=llm_usage["usage"] or LLMUsage.empty_usage(),
+                    usage=usage or LLMUsage.empty_usage(),
                     system_fingerprint="",
                 )
             ),
