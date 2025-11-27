@@ -239,7 +239,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                         yield from self._yield_final_answer(
                             prompt_messages=prompt_messages,
                             final_answer=final_answer,
-                            usage=llm_usage["usage"],
+                            usage=llm_usage["usage"] or LLMUsage.empty_usage(),
                         )
                         return
                     else:
@@ -254,7 +254,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
         yield from self._yield_final_answer(
             prompt_messages=prompt_messages,
             final_answer=final_answer,
-            usage=llm_usage["usage"],
+            usage=llm_usage["usage"] or LLMUsage.empty_usage(),
         )
 
         # save agent thought only when final answer is NOT directly from tool
