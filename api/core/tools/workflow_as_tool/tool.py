@@ -120,7 +120,7 @@ class WorkflowTool(Tool):
 
         direct_text = None
         if return_direct_flag:
-            string_values = [v for v in outputs.values() if isinstance(v, str)]
+            string_values = [v for k, v in sorted(outputs.items()) if isinstance(v, str)]
             if string_values:
                 direct_text = "\n".join(string_values)
 
