@@ -452,16 +452,19 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         prompt_messages: list[PromptMessage],
         usage: LLMUsage,
     ) -> Generator[LLMResultChunk, None, None]:
-        final_answer = "\n".join(
-            [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
-        )
+        final_answer_parts = []
         tool_invoke_meta_agg: dict[str, list[Any]] = {}
         observation_agg: dict[str, list[Any]] = {}
         tool_input_agg: dict[str, list[Any]] = {}
+
         for tr in tool_responses:
+            if tr.get("tool_response") is not None:
+                final_answer_parts.append(str(tr["tool_response"]))
             tool_invoke_meta_agg.setdefault(tr["tool_call_name"], []).append(tr["meta"])
             observation_agg.setdefault(tr["tool_call_name"], []).append(tr["tool_response"])
             tool_input_agg.setdefault(tr["tool_call_name"], []).append(tr.get("tool_call_args", {}))
+
+        final_answer = "\n".join(final_answer_parts)
         tool_invoke_meta = self._flatten(tool_invoke_meta_agg)
         observation = self._flatten(observation_agg)
         tool_input = self._flatten(tool_input_agg)
