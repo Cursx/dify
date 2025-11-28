@@ -123,14 +123,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                         function_call_state = True
                         tool_calls.extend(self.extract_tool_calls(chunk) or [])
                         tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
-                        tool_call_inputs_agg: dict[str, list[Any]] = {}
-                        for tool_call in tool_calls:
-                            tool_call_inputs_agg.setdefault(tool_call[1], []).append(tool_call[2])
-                        try:
-                            tool_call_inputs = json.dumps(tool_call_inputs_agg, ensure_ascii=False)
-                        except TypeError:
-                            # fallback: force ASCII to handle non-serializable objects
-                            tool_call_inputs = json.dumps(tool_call_inputs_agg)
+                        tool_call_inputs = self._aggregate_and_serialize_tool_inputs(tool_calls)
 
                     if chunk.delta.message and chunk.delta.message.content:
                         if isinstance(chunk.delta.message.content, list):
@@ -151,14 +144,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     function_call_state = True
                     tool_calls.extend(self.extract_blocking_tool_calls(result) or [])
                     tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
-                    tool_call_inputs_agg: dict[str, list[Any]] = {}
-                    for tool_call in tool_calls:
-                        tool_call_inputs_agg.setdefault(tool_call[1], []).append(tool_call[2])
-                    try:
-                        tool_call_inputs = json.dumps(tool_call_inputs_agg, ensure_ascii=False)
-                    except TypeError:
-                        # fallback: force ASCII to handle non-serializable objects
-                        tool_call_inputs = json.dumps(tool_call_inputs_agg)
+                    tool_call_inputs = self._aggregate_and_serialize_tool_inputs(tool_calls)
 
                 if result.usage:
                     increase_usage(llm_usage, result.usage)
@@ -299,13 +285,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                                 name=tr["tool_call_name"],
                             )
                         )
-                tool_invoke_meta_agg: dict[str, list[Any]] = {}
-                observation_agg: dict[str, list[Any]] = {}
-                for tool_response in tool_responses:
-                    tool_invoke_meta_agg.setdefault(tool_response["tool_call_name"], []).append(tool_response["meta"])
-                    observation_agg.setdefault(tool_response["tool_call_name"], []).append(
-                        tool_response["tool_response"]
-                    )
+                tool_invoke_meta_agg, observation_agg, _ = self._aggregate_tool_response_details(tool_responses)
 
                 # save agent thought
                 self.save_agent_thought(
@@ -396,6 +376,31 @@ class FunctionCallAgentRunner(BaseAgentRunner):
 
         return tool_calls
 
+    def _aggregate_and_serialize_tool_inputs(self, tool_calls: list[tuple[str, str, dict[str, Any]]]) -> str:
+        tool_call_inputs_agg: dict[str, list[Any]] = {}
+        for _, tool_name, tool_args in tool_calls:
+            tool_call_inputs_agg.setdefault(tool_name, []).append(tool_args)
+        try:
+            return json.dumps(tool_call_inputs_agg, ensure_ascii=False)
+        except TypeError:
+            # fallback: force ASCII to handle non-serializable objects
+            return json.dumps(tool_call_inputs_agg)
+
+    def _aggregate_tool_response_details(
+        self, tool_responses: list[dict[str, Any]], with_inputs: bool = False
+    ) -> tuple[dict, dict, dict | None]:
+        tool_invoke_meta_agg: dict[str, list[Any]] = {}
+        observation_agg: dict[str, list[Any]] = {}
+        tool_input_agg: dict[str, list[Any]] | None = {} if with_inputs else None
+
+        for tr in tool_responses:
+            tool_invoke_meta_agg.setdefault(tr["tool_call_name"], []).append(tr["meta"])
+            observation_agg.setdefault(tr["tool_call_name"], []).append(tr["tool_response"])
+            if with_inputs and tool_input_agg is not None:
+                tool_input_agg.setdefault(tr["tool_call_name"], []).append(tr.get("tool_call_args", {}))
+
+        return tool_invoke_meta_agg, observation_agg, tool_input_agg
+
 
 
     def _create_tool_response(
@@ -428,13 +433,9 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         final_answer = "\n".join(
             [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
         )
-        tool_invoke_meta_agg: dict[str, list[Any]] = {}
-        observation_agg: dict[str, list[Any]] = {}
-        tool_input_agg: dict[str, list[Any]] = {}
-        for tr in tool_responses:
-            tool_invoke_meta_agg.setdefault(tr["tool_call_name"], []).append(tr["meta"])
-            observation_agg.setdefault(tr["tool_call_name"], []).append(tr["tool_response"])
-            tool_input_agg.setdefault(tr["tool_call_name"], []).append(tr.get("tool_call_args", {}))
+        tool_invoke_meta_agg, observation_agg, tool_input_agg = self._aggregate_tool_response_details(
+            tool_responses, with_inputs=True
+        )
         tool_name = ";".join(sorted({tr["tool_call_name"] for tr in tool_responses}))
         self.save_agent_thought(
             agent_thought_id=agent_thought_id,
