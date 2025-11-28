@@ -131,9 +131,7 @@ class WorkflowTool(Tool):
         text_output = json.dumps(outputs, ensure_ascii=False)
         if return_direct_flag:
             # If return_direct is true, we try to find a string to output directly
-            string_values = []
-            if isinstance(outputs, dict):
-                string_values = [v for v in outputs.values() if isinstance(v, str)]
+            string_values = [v for v in outputs.values() if isinstance(v, str)]
 
             if string_values:
                 text_output = "\n".join(string_values)
