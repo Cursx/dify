@@ -321,6 +321,36 @@ class BaseAgentRunner(AppRunner):
 
         return agent_thought_id
 
+    def _yield_final_answer(
+        self,
+        prompt_messages: list[PromptMessage],
+        final_answer: str,
+        usage: LLMUsage,
+    ) -> Generator[LLMResultChunk, None, None]:
+        yield LLMResultChunk(
+            model=self.model_instance.model,
+            prompt_messages=prompt_messages,
+            system_fingerprint="",
+            delta=LLMResultChunkDelta(
+                index=0,
+                message=AssistantPromptMessage(content=final_answer),
+                usage=usage,
+            ),
+        )
+
+        self.queue_manager.publish(
+            QueueMessageEndEvent(
+                llm_result=LLMResult(
+                    model=self.model_instance.model,
+                    prompt_messages=prompt_messages,
+                    message=AssistantPromptMessage(content=final_answer),
+                    usage=usage,
+                    system_fingerprint="",
+                )
+            ),
+            PublishFrom.APPLICATION_MANAGER,
+        )
+
     def save_agent_thought(
         self,
         agent_thought_id: str,
