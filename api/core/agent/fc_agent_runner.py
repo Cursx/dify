@@ -473,8 +473,6 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
         )
 
-
-
         yield from self._yield_final_answer(prompt_messages, final_answer, usage)
 
     def _init_system_message(self, prompt_template: str, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
