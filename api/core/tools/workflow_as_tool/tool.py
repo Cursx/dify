@@ -119,27 +119,23 @@ class WorkflowTool(Tool):
         if isinstance(outputs, dict):
             return_direct_flag = outputs.pop("return_direct", None) is True
 
-        # Traverse `outputs` field and create variable messages from the official update
-        if isinstance(outputs, dict):
-            for key, value in outputs.items():
-                if key not in {"text", "json", "files"}:
-                    yield self.create_variable_message(variable_name=key, variable_value=value)
-
         self._latest_usage = self._derive_usage_from_result(data)
 
-        # Handle final output message
-        text_output = json.dumps(outputs, ensure_ascii=False)
-        if return_direct_flag:
-            # If return_direct is true, we try to find a string to output directly
-            string_values = [v for v in outputs.values() if isinstance(v, str)]
+        # Reb-broadcast the outputs as tool invoke messages.
+        # This is to align with the behavior of the tool node in the workflow.
+        if isinstance(outputs, dict):
+            # handle text output
+            if "text" in outputs and isinstance(outputs["text"], str):
+                yield self.create_text_message(outputs.pop("text"))
+            # handle json output
+            if "json" in outputs and isinstance(outputs["json"], (dict, list)):
+                yield self.create_json_message(outputs.pop("json"))
+            # Create variable messages for the rest of the outputs
+            for key, value in outputs.items():
+                yield self.create_variable_message(variable_name=key, variable_value=value)
+        elif isinstance(outputs, str):
+            yield self.create_text_message(outputs)
 
-            if string_values:
-                text_output = "\n".join(string_values)
-
-        yield self.create_text_message(text_output)
-
-        # Always yield json for observation and the return_direct variable if needed
-        yield self.create_json_message(outputs, suppress_output=True)
         if return_direct_flag:
             yield self.create_variable_message("return_direct", True)
 
