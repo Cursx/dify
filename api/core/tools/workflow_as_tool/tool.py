@@ -129,7 +129,7 @@ class WorkflowTool(Tool):
                 yield self.create_text_message(outputs.pop("text"))
             # handle json output
             if "json" in outputs and isinstance(outputs["json"], (dict, list)):
-                yield self.create_json_message(outputs.pop("json"))
+                yield self.create_json_message(outputs.pop("json"), suppress_output=True)
 
             if outputs:
                 # Yield remaining as a text message for observation
