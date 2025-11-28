@@ -152,13 +152,13 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     tool_calls.extend(self.extract_blocking_tool_calls(result) or [])
                     tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
                     tool_call_inputs_agg: dict[str, list[Any]] = {}
-                        for tool_call in tool_calls:
-                            tool_call_inputs_agg.setdefault(tool_call[1], []).append(tool_call[2])
-                        try:
-                            tool_call_inputs = json.dumps(tool_call_inputs_agg, ensure_ascii=False)
-                        except TypeError:
-                            # fallback: force ASCII to handle non-serializable objects
-                            tool_call_inputs = json.dumps(tool_call_inputs_agg)
+                    for tool_call in tool_calls:
+                        tool_call_inputs_agg.setdefault(tool_call[1], []).append(tool_call[2])
+                    try:
+                        tool_call_inputs = json.dumps(tool_call_inputs_agg, ensure_ascii=False)
+                    except TypeError:
+                        # fallback: force ASCII to handle non-serializable objects
+                        tool_call_inputs = json.dumps(tool_call_inputs_agg)
 
                 if result.usage:
                     increase_usage(llm_usage, result.usage)
