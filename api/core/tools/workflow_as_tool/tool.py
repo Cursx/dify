@@ -130,9 +130,13 @@ class WorkflowTool(Tool):
             # handle json output
             if "json" in outputs and isinstance(outputs["json"], (dict, list)):
                 yield self.create_json_message(outputs.pop("json"))
-            # Create variable messages for the rest of the outputs
-            for key, value in outputs.items():
-                yield self.create_variable_message(variable_name=key, variable_value=value)
+
+            if outputs:
+                # Yield remaining as a text message for observation
+                yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+                # And as variables for workflow
+                for key, value in outputs.items():
+                    yield self.create_variable_message(variable_name=key, variable_value=value)
         elif isinstance(outputs, str):
             yield self.create_text_message(outputs)
 
