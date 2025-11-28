@@ -123,13 +123,14 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                         function_call_state = True
                         tool_calls.extend(self.extract_tool_calls(chunk) or [])
                         tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
+                        tool_call_inputs_agg: dict[str, list[Any]] = {}
+                        for tool_call in tool_calls:
+                            tool_call_inputs_agg.setdefault(tool_call[1], []).append(tool_call[2])
                         try:
-                            tool_call_inputs = json.dumps(
-                                {tool_call[1]: tool_call[2] for tool_call in tool_calls}, ensure_ascii=False
-                            )
+                            tool_call_inputs = json.dumps(tool_call_inputs_agg, ensure_ascii=False)
                         except TypeError:
                             # fallback: force ASCII to handle non-serializable objects
-                            tool_call_inputs = json.dumps({tool_call[1]: tool_call[2] for tool_call in tool_calls})
+                            tool_call_inputs = json.dumps(tool_call_inputs_agg)
 
                     if chunk.delta.message and chunk.delta.message.content:
                         if isinstance(chunk.delta.message.content, list):
@@ -150,13 +151,14 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     function_call_state = True
                     tool_calls.extend(self.extract_blocking_tool_calls(result) or [])
                     tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
-                    try:
-                        tool_call_inputs = json.dumps(
-                            {tool_call[1]: tool_call[2] for tool_call in tool_calls}, ensure_ascii=False
-                        )
-                    except TypeError:
-                        # fallback: force ASCII to handle non-serializable objects
-                        tool_call_inputs = json.dumps({tool_call[1]: tool_call[2] for tool_call in tool_calls})
+                    tool_call_inputs_agg: dict[str, list[Any]] = {}
+                        for tool_call in tool_calls:
+                            tool_call_inputs_agg.setdefault(tool_call[1], []).append(tool_call[2])
+                        try:
+                            tool_call_inputs = json.dumps(tool_call_inputs_agg, ensure_ascii=False)
+                        except TypeError:
+                            # fallback: force ASCII to handle non-serializable objects
+                            tool_call_inputs = json.dumps(tool_call_inputs_agg)
 
                 if result.usage:
                     increase_usage(llm_usage, result.usage)
@@ -297,19 +299,22 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                                 name=tr["tool_call_name"],
                             )
                         )
+                tool_invoke_meta_agg: dict[str, list[Any]] = {}
+                observation_agg: dict[str, list[Any]] = {}
+                for tool_response in tool_responses:
+                    tool_invoke_meta_agg.setdefault(tool_response["tool_call_name"], []).append(tool_response["meta"])
+                    observation_agg.setdefault(tool_response["tool_call_name"], []).append(
+                        tool_response["tool_response"]
+                    )
+
                 # save agent thought
                 self.save_agent_thought(
                     agent_thought_id=agent_thought_id,
                     tool_name="",
                     tool_input="",
                     thought="",
-                    tool_invoke_meta={
-                        tool_response["tool_call_name"]: tool_response["meta"] for tool_response in tool_responses
-                    },
-                    observation={
-                        tool_response["tool_call_name"]: tool_response["tool_response"]
-                        for tool_response in tool_responses
-                    },
+                    tool_invoke_meta=tool_invoke_meta_agg,
+                    observation=observation_agg,
                     answer="",
                     messages_ids=message_file_ids,
                 )
@@ -391,35 +396,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
 
         return tool_calls
 
-    def _yield_final_answer(
-        self,
-        prompt_messages: list[PromptMessage],
-        final_answer: str,
-        usage: LLMUsage,
-    ) -> Generator[LLMResultChunk, None, None]:
-        yield LLMResultChunk(
-            model=self.model_instance.model,
-            prompt_messages=prompt_messages,
-            system_fingerprint="",
-            delta=LLMResultChunkDelta(
-                index=0,
-                message=AssistantPromptMessage(content=final_answer),
-                usage=usage,
-            ),
-        )
 
-        self.queue_manager.publish(
-            QueueMessageEndEvent(
-                llm_result=LLMResult(
-                    model=self.model_instance.model,
-                    prompt_messages=prompt_messages,
-                    message=AssistantPromptMessage(content=final_answer),
-                    usage=usage,
-                    system_fingerprint="",
-                )
-            ),
-            PublishFrom.APPLICATION_MANAGER,
-        )
 
     def _create_tool_response(
         self,
