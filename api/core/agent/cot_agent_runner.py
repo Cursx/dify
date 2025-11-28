@@ -74,7 +74,6 @@ class CotAgentRunner(BaseAgentRunner, ABC):
         final_answer = ""
         prompt_messages: list = []  # Initialize prompt_messages
         agent_thought_id = ""  # Initialize agent_thought_id
-        is_final_answer_from_tool = False
 
         def increase_usage(final_llm_usage_dict: dict[str, LLMUsage | None], usage: LLMUsage):
             if not final_llm_usage_dict["usage"]:
