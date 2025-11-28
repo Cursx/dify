@@ -260,27 +260,10 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                 QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
             )
 
-        yield LLMResultChunk(
-            model=model_instance.model,
-            prompt_messages=prompt_messages,
-            delta=LLMResultChunkDelta(
-                index=0, message=AssistantPromptMessage(content=final_answer), usage=llm_usage["usage"]
-            ),
-            system_fingerprint="",
-        )
-
-        # publish end event
-        self.queue_manager.publish(
-            QueueMessageEndEvent(
-                llm_result=LLMResult(
-                    model=model_instance.model,
-                    prompt_messages=prompt_messages,
-                    message=AssistantPromptMessage(content=final_answer),
-                    usage=llm_usage["usage"] or LLMUsage.empty_usage(),
-                    system_fingerprint="",
-                )
-            ),
-            PublishFrom.APPLICATION_MANAGER,
+        yield from self._yield_final_answer(
+            prompt_messages,
+            final_answer,
+            llm_usage.get("usage") or LLMUsage.empty_usage(),
         )
 
     def _handle_invoke_action(
