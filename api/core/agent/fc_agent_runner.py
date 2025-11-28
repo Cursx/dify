@@ -479,19 +479,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
         )
 
-        self.save_agent_thought(
-            agent_thought_id=agent_thought_id,
-            tool_name="",
-            tool_input={},
-            thought=final_answer,
-            tool_invoke_meta={},
-            observation={},
-            answer=final_answer,
-            messages_ids=message_file_ids,
-        )
-        self.queue_manager.publish(
-            QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
-        )
+
 
         yield from self._yield_final_answer(prompt_messages, final_answer, usage)
 
