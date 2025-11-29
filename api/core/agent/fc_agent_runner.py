@@ -265,7 +265,10 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     }
 
                 tool_responses.append(tool_response)
-                if tool_response["tool_response"] is not None:
+                # check direct return flag
+                direct_flag = (tool_invoke_meta.extra or {}).get("return_direct", False)
+
+                if tool_response["tool_response"] is not None and not direct_flag:
                     self._current_thoughts.append(
                         ToolPromptMessage(
                             content=str(tool_response["tool_response"]),
@@ -273,6 +276,28 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                             name=tool_call_name,
                         )
                     )
+
+                if direct_flag:
+                    # save agent thought for this tool call
+                    self.save_agent_thought(
+                        agent_thought_id=agent_thought_id,
+                        tool_name=tool_call_name,
+                        tool_input=tool_call_args,
+                        thought=llm_result.message.content or "",
+                        tool_invoke_meta={tool_call_name: tool_invoke_meta.to_dict()},
+                        observation={tool_call_name: tool_invoke_response},
+                        answer=str(tool_invoke_response or ""),
+                        messages_ids=message_file_ids,
+                    )
+                    self.queue_manager.publish(
+                        QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
+                    )
+
+                    # publish end event immediately and return
+                    final_answer = str(tool_invoke_response or "")
+                    llm_final_usage = llm_usage.get("usage") or LLMUsage.empty_usage()
+                    yield from self._yield_final_answer(prompt_messages, final_answer, llm_final_usage)
+                    return
 
             if len(tool_responses) > 0:
                 # save agent thought
@@ -301,18 +326,10 @@ class FunctionCallAgentRunner(BaseAgentRunner):
 
             iteration_step += 1
 
-        # publish end event
-        self.queue_manager.publish(
-            QueueMessageEndEvent(
-                llm_result=LLMResult(
-                    model=model_instance.model,
-                    prompt_messages=prompt_messages,
-                    message=AssistantPromptMessage(content=final_answer),
-                    usage=llm_usage["usage"] or LLMUsage.empty_usage(),
-                    system_fingerprint="",
-                )
-            ),
-            PublishFrom.APPLICATION_MANAGER,
+        yield from self._yield_final_answer(
+            prompt_messages,
+            final_answer,
+            llm_usage["usage"] or LLMUsage.empty_usage(),
         )
 
     def check_tool_calls(self, llm_result_chunk: LLMResultChunk) -> bool:
@@ -376,6 +393,36 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             )
 
         return tool_calls
+
+    def _yield_final_answer(
+        self,
+        prompt_messages: list,
+        final_answer: str,
+        usage: LLMUsage,
+    ) -> Generator[LLMResultChunk, None, None]:
+        self.queue_manager.publish(
+            QueueMessageEndEvent(
+                llm_result=LLMResult(
+                    model=self.model_instance.model,
+                    prompt_messages=prompt_messages,
+                    message=AssistantPromptMessage(content=final_answer),
+                    usage=usage,
+                    system_fingerprint="",
+                )
+            ),
+            PublishFrom.APPLICATION_MANAGER,
+        )
+
+        yield LLMResultChunk(
+            model=self.model_instance.model,
+            prompt_messages=prompt_messages,
+            system_fingerprint="",
+            delta=LLMResultChunkDelta(
+                index=0,
+                message=AssistantPromptMessage(content=final_answer),
+                usage=usage,
+            ),
+        )
 
     def _init_system_message(self, prompt_template: str, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
         """
