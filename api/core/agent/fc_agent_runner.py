@@ -323,10 +323,18 @@ class FunctionCallAgentRunner(BaseAgentRunner):
 
             iteration_step += 1
 
-        yield from self._yield_final_answer(
-            prompt_messages,
-            final_answer,
-            llm_usage.get("usage") or LLMUsage.empty_usage(),
+        final_usage = llm_usage.get("usage") or LLMUsage.empty_usage()
+        self.queue_manager.publish(
+            QueueMessageEndEvent(
+                llm_result=LLMResult(
+                    model=self.model_instance.model,
+                    prompt_messages=prompt_messages,
+                    message=AssistantPromptMessage(content=final_answer),
+                    usage=final_usage,
+                    system_fingerprint="",
+                )
+            ),
+            PublishFrom.APPLICATION_MANAGER,
         )
 
     def check_tool_calls(self, llm_result_chunk: LLMResultChunk) -> bool:
