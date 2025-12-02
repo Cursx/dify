@@ -234,6 +234,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
 
                     if direct_flag:
                         final_answer = str(tool_invoke_response or "")
+                        is_final_answer_from_tool = True
                         # keep function_call_state as False to end iterations
                     else:
                         function_call_state = True
@@ -262,7 +263,9 @@ class CotAgentRunner(BaseAgentRunner, ABC):
             model=model_instance.model,
             prompt_messages=prompt_messages,
             delta=LLMResultChunkDelta(
-                index=0, message=AssistantPromptMessage(content=final_answer), usage=llm_usage["usage"]
+                index=0,
+                message=AssistantPromptMessage(content=final_answer if is_final_answer_from_tool else ""),
+                usage=llm_usage["usage"],
             ),
             system_fingerprint="",
         )
