@@ -525,7 +525,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         self.save_agent_thought(
             agent_thought_id=final_answer_thought_id,
             tool_name="",
-            tool_input={},
+            tool_input="",
             thought=final_answer,
             tool_invoke_meta={},
             observation={},
