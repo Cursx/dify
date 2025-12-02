@@ -521,7 +521,32 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             QueueAgentThoughtEvent(agent_thought_id=final_answer_thought_id), PublishFrom.APPLICATION_MANAGER
         )
 
-        yield from self._yield_final_answer(prompt_messages, final_answer, usage)
+        # In return_direct mode, the final answer is already provided by the tool response.
+        # The _yield_final_answer will re-emit the content if we pass it.
+        # So we pass an empty string for content to avoid duplication, but keep usage.
+        yield LLMResultChunk(
+            model=self.model_instance.model,
+            prompt_messages=prompt_messages,
+            system_fingerprint="",
+            delta=LLMResultChunkDelta(
+                index=0,
+                message=AssistantPromptMessage(content=""),
+                usage=usage,
+            ),
+        )
+
+        self.queue_manager.publish(
+            QueueMessageEndEvent(
+                llm_result=LLMResult(
+                    model=self.model_instance.model,
+                    prompt_messages=prompt_messages,
+                    message=AssistantPromptMessage(content=final_answer),
+                    usage=usage,
+                    system_fingerprint="",
+                )
+            ),
+            PublishFrom.APPLICATION_MANAGER,
+        )
 
     def _init_system_message(self, prompt_template: str, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
         """
