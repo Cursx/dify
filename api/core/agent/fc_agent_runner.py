@@ -383,8 +383,8 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         try:
             return json.dumps(tool_call_inputs_agg, ensure_ascii=False)
         except TypeError:
-            # fallback: force ASCII to handle non-serializable objects
-            return json.dumps(tool_call_inputs_agg)
+            # fallback: convert non-serializable objects to their string representation.
+            return json.dumps(tool_call_inputs_agg, ensure_ascii=False, default=str)
 
     def _aggregate_tool_response_details(
         self, tool_responses: list[dict[str, Any]], with_inputs: bool = False
