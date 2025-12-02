@@ -74,6 +74,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
         final_answer = ""
         prompt_messages: list = []  # Initialize prompt_messages
         agent_thought_id = ""  # Initialize agent_thought_id
+        is_final_answer_from_tool = False
 
         def increase_usage(final_llm_usage_dict: dict[str, LLMUsage | None], usage: LLMUsage):
             if not final_llm_usage_dict["usage"]:
@@ -202,7 +203,6 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                     except TypeError:
                         final_answer = f"{scratchpad.action.action_input}"
                 else:
-                    function_call_state = True
                     # action is tool call, invoke tool
                     tool_invoke_response, tool_invoke_meta = self._handle_invoke_action(
                         action=scratchpad.action,
@@ -212,6 +212,9 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                     )
                     scratchpad.observation = tool_invoke_response
                     scratchpad.agent_response = tool_invoke_response
+
+                    # detect direct return
+                    direct_flag = (tool_invoke_meta.extra or {}).get("return_direct", False)
 
                     self.save_agent_thought(
                         agent_thought_id=agent_thought_id,
@@ -229,11 +232,33 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                         QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
                     )
 
+                    if direct_flag:
+                        final_answer = str(tool_invoke_response or "")
+                        is_final_answer_from_tool = True
+                        # keep function_call_state as False to end iterations
+                    else:
+                        function_call_state = True
+
                 # update prompt tool message
                 for prompt_tool in self._prompt_messages_tools:
                     self.update_prompt_message_tool(tool_instances[prompt_tool.name], prompt_tool)
 
             iteration_step += 1
+
+        if not is_final_answer_from_tool:
+            self.save_agent_thought(
+                agent_thought_id=agent_thought_id,
+                tool_name="",
+                tool_input={},
+                tool_invoke_meta={},
+                thought=final_answer,
+                observation={},
+                answer=final_answer,
+                messages_ids=[],
+            )
+            self.queue_manager.publish(
+                QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
+            )
 
         yield LLMResultChunk(
             model=model_instance.model,
@@ -244,17 +269,6 @@ class CotAgentRunner(BaseAgentRunner, ABC):
             system_fingerprint="",
         )
 
-        # save agent thought
-        self.save_agent_thought(
-            agent_thought_id=agent_thought_id,
-            tool_name="",
-            tool_input={},
-            tool_invoke_meta={},
-            thought=final_answer,
-            observation={},
-            answer=final_answer,
-            messages_ids=[],
-        )
         # publish end event
         self.queue_manager.publish(
             QueueMessageEndEvent(
