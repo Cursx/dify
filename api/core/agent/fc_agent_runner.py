@@ -124,26 +124,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                         tool_calls.extend(self.extract_tool_calls(chunk) or [])
                         tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
                         
-                        # Organize tool inputs by tool name, handling multiple calls to the same tool
-                        tool_inputs_map = {}
-                        for tool_call in tool_calls:
-                            name = tool_call[1]
-                            args = tool_call[2]
-                            if name not in tool_inputs_map:
-                                tool_inputs_map[name] = []
-                            tool_inputs_map[name].append(args)
-                        
-                        # Flatten single inputs for backward compatibility or simpler structure
-                        final_tool_inputs = {
-                            name: (inputs[0] if len(inputs) == 1 else inputs)
-                            for name, inputs in tool_inputs_map.items()
-                        }
-
-                        try:
-                            tool_call_inputs = json.dumps(final_tool_inputs, ensure_ascii=False)
-                        except TypeError:
-                            # fallback: force ASCII to handle non-serializable objects
-                            tool_call_inputs = json.dumps(final_tool_inputs)
+                        tool_call_inputs = self._prepare_tool_inputs(tool_calls)
 
                     if chunk.delta.message and chunk.delta.message.content:
                         if isinstance(chunk.delta.message.content, list):
@@ -165,26 +146,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     tool_calls.extend(self.extract_blocking_tool_calls(result) or [])
                     tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
                     
-                    # Organize tool inputs by tool name, handling multiple calls to the same tool
-                    tool_inputs_map = {}
-                    for tool_call in tool_calls:
-                        name = tool_call[1]
-                        args = tool_call[2]
-                        if name not in tool_inputs_map:
-                            tool_inputs_map[name] = []
-                        tool_inputs_map[name].append(args)
-                    
-                    # Flatten single inputs for backward compatibility or simpler structure
-                    final_tool_inputs = {
-                        name: (inputs[0] if len(inputs) == 1 else inputs)
-                        for name, inputs in tool_inputs_map.items()
-                    }
-
-                    try:
-                        tool_call_inputs = json.dumps(final_tool_inputs, ensure_ascii=False)
-                    except TypeError:
-                        # fallback: force ASCII to handle non-serializable objects
-                        tool_call_inputs = json.dumps(final_tool_inputs)
+                    tool_call_inputs = self._prepare_tool_inputs(tool_calls)
 
                 if result.usage:
                     increase_usage(llm_usage, result.usage)
@@ -439,6 +401,31 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             )
 
         return tool_calls
+
+    def _prepare_tool_inputs(self, tool_calls: list[tuple[str, str, dict[str, Any]]]) -> str:
+        """
+        Prepare tool inputs from tool calls, handling multiple calls to the same tool.
+        """
+        # Organize tool inputs by tool name, handling multiple calls to the same tool
+        tool_inputs_map = {}
+        for tool_call in tool_calls:
+            name = tool_call[1]
+            args = tool_call[2]
+            if name not in tool_inputs_map:
+                tool_inputs_map[name] = []
+            tool_inputs_map[name].append(args)
+
+        # Flatten single inputs for backward compatibility or simpler structure
+        final_tool_inputs = {
+            name: (inputs[0] if len(inputs) == 1 else inputs)
+            for name, inputs in tool_inputs_map.items()
+        }
+
+        try:
+            return json.dumps(final_tool_inputs, ensure_ascii=False)
+        except TypeError:
+            # fallback: force ASCII to handle non-serializable objects
+            return json.dumps(final_tool_inputs)
 
     def _yield_final_answer(
         self,
