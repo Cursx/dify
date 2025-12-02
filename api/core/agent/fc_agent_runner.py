@@ -291,7 +291,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                         # add message file ids
                         message_file_ids.append(message_file_id)
 
-                    direct_flag = bool((tool_invoke_meta.extra or {}).get("return_direct", False))
+                    direct_flag = (tool_invoke_meta.extra or {}).get("return_direct", False)
                     tool_response = self._create_tool_response(
                         tool_call_id,
                         tool_call_name,
