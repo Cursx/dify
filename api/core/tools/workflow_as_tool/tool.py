@@ -114,15 +114,39 @@ class WorkflowTool(Tool):
             for file in files:
                 yield self.create_file_message(file)  # type: ignore
 
-        # traverse `outputs` field and create variable messages
-        for key, value in outputs.items():
-            if key not in {"text", "json", "files"}:
-                yield self.create_variable_message(variable_name=key, variable_value=value)
+        # Pop return_direct first to avoid it being created as a variable
+        return_direct_flag = False
+        if isinstance(outputs, dict):
+            return_direct_flag = outputs.pop("return_direct", None) is True
+
+        # Traverse `outputs` field and create variable messages from the official update
+        if isinstance(outputs, dict):
+            for key, value in outputs.items():
+                if key not in {"text", "json", "files"}:
+                    yield self.create_variable_message(variable_name=key, variable_value=value)
 
         self._latest_usage = self._derive_usage_from_result(data)
 
-        yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+        # Handle final output message
+        if return_direct_flag:
+            # If return_direct is true, we try to find a string to output directly
+            string_values = []
+            if isinstance(outputs, dict):
+                string_values = [v for v in outputs.values() if isinstance(v, str)]
+
+            if string_values:
+                yield self.create_text_message("\n".join(string_values))
+            else:
+                # Fallback for safety, though usually a direct return implies a string
+                yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+        else:
+            # Original behavior if not returning directly
+            yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+
+        # Always yield json for observation and the return_direct variable if needed
         yield self.create_json_message(outputs, suppress_output=True)
+        if return_direct_flag:
+            yield self.create_variable_message("return_direct", True)
 
     @property
     def latest_usage(self) -> LLMUsage:
