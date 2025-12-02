@@ -123,13 +123,27 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                         function_call_state = True
                         tool_calls.extend(self.extract_tool_calls(chunk) or [])
                         tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
+                        
+                        # Organize tool inputs by tool name, handling multiple calls to the same tool
+                        tool_inputs_map = {}
+                        for tool_call in tool_calls:
+                            name = tool_call[1]
+                            args = tool_call[2]
+                            if name not in tool_inputs_map:
+                                tool_inputs_map[name] = []
+                            tool_inputs_map[name].append(args)
+                        
+                        # Flatten single inputs for backward compatibility or simpler structure
+                        final_tool_inputs = {
+                            name: (inputs[0] if len(inputs) == 1 else inputs)
+                            for name, inputs in tool_inputs_map.items()
+                        }
+
                         try:
-                            tool_call_inputs = json.dumps(
-                                {tool_call[1]: tool_call[2] for tool_call in tool_calls}, ensure_ascii=False
-                            )
+                            tool_call_inputs = json.dumps(final_tool_inputs, ensure_ascii=False)
                         except TypeError:
                             # fallback: force ASCII to handle non-serializable objects
-                            tool_call_inputs = json.dumps({tool_call[1]: tool_call[2] for tool_call in tool_calls})
+                            tool_call_inputs = json.dumps(final_tool_inputs)
 
                     if chunk.delta.message and chunk.delta.message.content:
                         if isinstance(chunk.delta.message.content, list):
@@ -150,13 +164,27 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                     function_call_state = True
                     tool_calls.extend(self.extract_blocking_tool_calls(result) or [])
                     tool_call_names = ";".join([tool_call[1] for tool_call in tool_calls])
+                    
+                    # Organize tool inputs by tool name, handling multiple calls to the same tool
+                    tool_inputs_map = {}
+                    for tool_call in tool_calls:
+                        name = tool_call[1]
+                        args = tool_call[2]
+                        if name not in tool_inputs_map:
+                            tool_inputs_map[name] = []
+                        tool_inputs_map[name].append(args)
+                    
+                    # Flatten single inputs for backward compatibility or simpler structure
+                    final_tool_inputs = {
+                        name: (inputs[0] if len(inputs) == 1 else inputs)
+                        for name, inputs in tool_inputs_map.items()
+                    }
+
                     try:
-                        tool_call_inputs = json.dumps(
-                            {tool_call[1]: tool_call[2] for tool_call in tool_calls}, ensure_ascii=False
-                        )
+                        tool_call_inputs = json.dumps(final_tool_inputs, ensure_ascii=False)
                     except TypeError:
                         # fallback: force ASCII to handle non-serializable objects
-                        tool_call_inputs = json.dumps({tool_call[1]: tool_call[2] for tool_call in tool_calls})
+                        tool_call_inputs = json.dumps(final_tool_inputs)
 
                 if result.usage:
                     increase_usage(llm_usage, result.usage)
