@@ -500,8 +500,15 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
         )
 
+        final_answer_thought_id = self.create_agent_thought(
+            message_id=self.message.id,
+            message=final_answer,
+            tool_name="",
+            tool_input="",
+            messages_ids=message_file_ids,
+        )
         self.save_agent_thought(
-            agent_thought_id=agent_thought_id,
+            agent_thought_id=final_answer_thought_id,
             tool_name="",
             tool_input={},
             thought=final_answer,
@@ -511,7 +518,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             messages_ids=message_file_ids,
         )
         self.queue_manager.publish(
-            QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
+            QueueAgentThoughtEvent(agent_thought_id=final_answer_thought_id), PublishFrom.APPLICATION_MANAGER
         )
 
         yield from self._yield_final_answer(prompt_messages, final_answer, usage)
