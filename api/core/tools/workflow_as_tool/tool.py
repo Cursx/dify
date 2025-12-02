@@ -114,15 +114,34 @@ class WorkflowTool(Tool):
             for file in files:
                 yield self.create_file_message(file)  # type: ignore
 
-        # traverse `outputs` field and create variable messages
-        for key, value in outputs.items():
-            if key not in {"text", "json", "files"}:
-                yield self.create_variable_message(variable_name=key, variable_value=value)
+        # Pop return_direct first to avoid it being created as a variable
+        return_direct_flag = False
+        if isinstance(outputs, dict):
+            return_direct_flag = outputs.pop("return_direct", None) is True
+
+        # Traverse `outputs` field and create variable messages from the official update
+        if isinstance(outputs, dict):
+            for key, value in outputs.items():
+                if key not in {"text", "json", "files"}:
+                    yield self.create_variable_message(variable_name=key, variable_value=value)
 
         self._latest_usage = self._derive_usage_from_result(data)
 
-        yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+        # Handle final output message
+        text_output = json.dumps(outputs, ensure_ascii=False)
+        if return_direct_flag:
+            # If return_direct is true, we try to find a string to output directly
+            string_values = [v for v in outputs.values() if isinstance(v, str)]
+
+            if string_values:
+                text_output = "\n".join(string_values)
+
+        yield self.create_text_message(text_output)
+
+        # Always yield json for observation and the return_direct variable if needed
         yield self.create_json_message(outputs, suppress_output=True)
+        if return_direct_flag:
+            yield self.create_variable_message("return_direct", True)
 
     @property
     def latest_usage(self) -> LLMUsage:
