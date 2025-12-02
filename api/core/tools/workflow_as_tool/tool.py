@@ -133,7 +133,11 @@ class WorkflowTool(Tool):
 
             if outputs:
                 # Yield remaining as a text message for observation
-                yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+                try:
+                    text_outputs = json.dumps(outputs, ensure_ascii=False)
+                except TypeError:
+                    text_outputs = json.dumps(outputs, ensure_ascii=False, default=str)
+                yield self.create_text_message(text_outputs)
                 # And as variables for workflow
                 for key, value in outputs.items():
                     yield self.create_variable_message(variable_name=key, variable_value=value)
