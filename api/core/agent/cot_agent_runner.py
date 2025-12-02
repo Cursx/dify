@@ -260,14 +260,15 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                 QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
             )
 
-        yield LLMResultChunk(
-            model=model_instance.model,
-            prompt_messages=prompt_messages,
-            delta=LLMResultChunkDelta(
-                index=0, message=AssistantPromptMessage(content=final_answer), usage=llm_usage["usage"]
-            ),
-            system_fingerprint="",
-        )
+        if is_final_answer_from_tool:
+            yield LLMResultChunk(
+                model=model_instance.model,
+                prompt_messages=prompt_messages,
+                delta=LLMResultChunkDelta(
+                    index=0, message=AssistantPromptMessage(content=final_answer), usage=llm_usage["usage"]
+                ),
+                system_fingerprint="",
+            )
 
         # publish end event
         self.queue_manager.publish(
