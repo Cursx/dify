@@ -25,7 +25,6 @@ from models.model import Message
 
 
 class CotAgentRunner(BaseAgentRunner, ABC):
-    _is_first_iteration = True
     _ignore_observation_providers = ["wenxin"]
     _historic_prompt_messages: list[PromptMessage]
     _agent_scratchpad: list[AgentScratchpadUnit]
@@ -74,7 +73,6 @@ class CotAgentRunner(BaseAgentRunner, ABC):
         final_answer = ""
         prompt_messages: list = []  # Initialize prompt_messages
         agent_thought_id = ""  # Initialize agent_thought_id
-        is_final_answer_from_tool = False
 
         def increase_usage(final_llm_usage_dict: dict[str, LLMUsage | None], usage: LLMUsage):
             if not final_llm_usage_dict["usage"]:
@@ -234,7 +232,6 @@ class CotAgentRunner(BaseAgentRunner, ABC):
 
                     if direct_flag:
                         final_answer = str(tool_invoke_response or "")
-                        is_final_answer_from_tool = True
                         # keep function_call_state as False to end iterations
                     else:
                         function_call_state = True
