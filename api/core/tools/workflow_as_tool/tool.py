@@ -133,10 +133,14 @@ class WorkflowTool(Tool):
             string_values = []
             if isinstance(outputs, dict):
                 for v in outputs.values():
+                    if v is None:
+                        continue
                     if isinstance(v, str):
                         string_values.append(v)
-                    elif v is not None:
-                        string_values.append(json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v))
+                    elif isinstance(v, (dict, list)):
+                        string_values.append(json.dumps(v, ensure_ascii=False))
+                    else:
+                        string_values.append(str(v))
 
             if string_values:
                 yield self.create_text_message("\n".join(string_values))
