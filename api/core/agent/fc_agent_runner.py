@@ -391,9 +391,9 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         Prepare tool inputs from tool calls, handling multiple calls to the same tool.
         """
         # Organize tool inputs by tool name, handling multiple calls to the same tool
-        tool_inputs_map = {}
+        tool_inputs_map = defaultdict(list)
         for _, name, args in tool_calls:
-            tool_inputs_map.setdefault(name, []).append(args)
+            tool_inputs_map[name].append(args)
 
         # Flatten single inputs for backward compatibility or simpler structure
         final_tool_inputs = self._flatten(tool_inputs_map)
