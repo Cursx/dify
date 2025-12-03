@@ -232,7 +232,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
 
                     if direct_flag:
                         final_answer = str(tool_invoke_response or "")
-                        # keep function_call_state as False to end iterations
+                        function_call_state = False  # Explicitly set to False
                     else:
                         function_call_state = True
 
