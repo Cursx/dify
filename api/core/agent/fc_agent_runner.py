@@ -459,6 +459,12 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             PublishFrom.APPLICATION_MANAGER,
         )
 
+    def _save_and_publish_thought(self, thought_id: str, **kwargs):
+        self.save_agent_thought(agent_thought_id=thought_id, **kwargs)
+        self.queue_manager.publish(
+            QueueAgentThoughtEvent(agent_thought_id=thought_id), PublishFrom.APPLICATION_MANAGER
+        )
+
     def _handle_direct_return(
         self,
         agent_thought_id: str,
@@ -468,12 +474,6 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         prompt_messages: list[PromptMessage],
         usage: LLMUsage,
     ) -> Generator[LLMResultChunk, None, None]:
-        def _save_and_publish_thought(thought_id: str, **kwargs):
-            self.save_agent_thought(agent_thought_id=thought_id, **kwargs)
-            self.queue_manager.publish(
-                QueueAgentThoughtEvent(agent_thought_id=thought_id), PublishFrom.APPLICATION_MANAGER
-            )
-
         final_answer = "\n".join(
             [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
         )
@@ -489,7 +489,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         tool_input = self._flatten(tool_input_agg)
         tool_name = ";".join(sorted({tr["tool_call_name"] for tr in tool_responses}))
 
-        _save_and_publish_thought(
+        self._save_and_publish_thought(
             thought_id=agent_thought_id,
             tool_name=tool_name,
             tool_input=tool_input,
@@ -507,7 +507,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             tool_input="",
             messages_ids=message_file_ids,
         )
-        _save_and_publish_thought(
+        self._save_and_publish_thought(
             thought_id=final_answer_thought_id,
             tool_name="",
             tool_input="",
