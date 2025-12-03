@@ -132,7 +132,11 @@ class WorkflowTool(Tool):
             # If return_direct is true, we try to find a string to output directly
             string_values = []
             if isinstance(outputs, dict):
-                string_values = [v for v in outputs.values() if isinstance(v, str)]
+                for v in outputs.values():
+                    if isinstance(v, str):
+                        string_values.append(v)
+                    elif v is not None:
+                        string_values.append(json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v))
 
             if string_values:
                 yield self.create_text_message("\n".join(string_values))
