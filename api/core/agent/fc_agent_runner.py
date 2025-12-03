@@ -507,6 +507,12 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             tool_input="",
             messages_ids=message_file_ids,
         )
+        # In Dify's UI, the thought process is split into steps:
+        # 1. Tool call step (Action): Requires `tool` and `observation` fields.
+        # 2. Final answer step (Response): Requires `thought` and `answer` fields.
+        # Even in `return_direct` mode, we must create this second thought with the final answer
+        # to ensure the frontend renders the "Final Answer" bubble correctly after the tool card.
+        # This maintains visual consistency with the standard ReAct loop.
         self._save_and_publish_thought(
             thought_id=final_answer_thought_id,
             tool_name="",
