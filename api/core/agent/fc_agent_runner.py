@@ -457,6 +457,12 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         def _flatten(agg_dict: dict[str, list[Any]]) -> dict[str, Any]:
             return {k: (v[0] if len(v) == 1 else v) for k, v in agg_dict.items()}
 
+        def _save_and_publish_thought(thought_id: str, **kwargs):
+            self.save_agent_thought(agent_thought_id=thought_id, **kwargs)
+            self.queue_manager.publish(
+                QueueAgentThoughtEvent(agent_thought_id=thought_id), PublishFrom.APPLICATION_MANAGER
+            )
+
         final_answer = "\n".join(
             [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
         )
@@ -471,8 +477,9 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         observation = _flatten(observation_agg)
         tool_input = _flatten(tool_input_agg)
         tool_name = ";".join(sorted({tr["tool_call_name"] for tr in tool_responses}))
-        self.save_agent_thought(
-            agent_thought_id=agent_thought_id,
+
+        _save_and_publish_thought(
+            thought_id=agent_thought_id,
             tool_name=tool_name,
             tool_input=tool_input,
             thought=thought,
@@ -480,9 +487,6 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             observation=observation,
             answer=final_answer,
             messages_ids=message_file_ids,
-        )
-        self.queue_manager.publish(
-            QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
         )
 
         final_answer_thought_id = self.create_agent_thought(
@@ -492,8 +496,8 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             tool_input="",
             messages_ids=message_file_ids,
         )
-        self.save_agent_thought(
-            agent_thought_id=final_answer_thought_id,
+        _save_and_publish_thought(
+            thought_id=final_answer_thought_id,
             tool_name="",
             tool_input="",
             thought=final_answer,
@@ -501,9 +505,6 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             observation={},
             answer=final_answer,
             messages_ids=message_file_ids,
-        )
-        self.queue_manager.publish(
-            QueueAgentThoughtEvent(agent_thought_id=final_answer_thought_id), PublishFrom.APPLICATION_MANAGER
         )
 
         # In return_direct mode, the final answer is already provided by the tool response.
