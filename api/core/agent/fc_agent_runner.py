@@ -398,11 +398,8 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         # Flatten single inputs for backward compatibility or simpler structure
         final_tool_inputs = self._flatten(tool_inputs_map)
 
-        try:
-            return json.dumps(final_tool_inputs, ensure_ascii=False)
-        except TypeError:
-            # fallback: handle non-serializable objects by converting them to strings
-            return json.dumps(final_tool_inputs, ensure_ascii=False, default=str)
+        # Handle non-serializable objects by converting them to strings
+        return json.dumps(final_tool_inputs, ensure_ascii=False, default=str)
 
     def _create_tool_response(
         self,
