@@ -401,8 +401,8 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         try:
             return json.dumps(final_tool_inputs, ensure_ascii=False)
         except TypeError:
-            # fallback: force ASCII to handle non-serializable objects
-            return json.dumps(final_tool_inputs)
+            # fallback: handle non-serializable objects by converting them to strings
+            return json.dumps(final_tool_inputs, ensure_ascii=False, default=str)
 
     def _create_tool_response(
         self,
