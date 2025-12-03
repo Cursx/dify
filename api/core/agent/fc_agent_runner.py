@@ -1,5 +1,6 @@
 import json
 import logging
+from collections import defaultdict
 from collections.abc import Generator
 from copy import deepcopy
 from typing import Any, Union
@@ -395,10 +396,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             tool_inputs_map.setdefault(name, []).append(args)
 
         # Flatten single inputs for backward compatibility or simpler structure
-        final_tool_inputs = {
-            name: (inputs[0] if len(inputs) == 1 else inputs)
-            for name, inputs in tool_inputs_map.items()
-        }
+        final_tool_inputs = self._flatten(tool_inputs_map)
 
         try:
             return json.dumps(final_tool_inputs, ensure_ascii=False)
@@ -477,13 +475,13 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         final_answer = "\n".join(
             [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
         )
-        tool_invoke_meta_agg: dict[str, list[Any]] = {}
-        observation_agg: dict[str, list[Any]] = {}
-        tool_input_agg: dict[str, list[Any]] = {}
+        tool_invoke_meta_agg = defaultdict(list)
+        observation_agg = defaultdict(list)
+        tool_input_agg = defaultdict(list)
         for tr in tool_responses:
-            tool_invoke_meta_agg.setdefault(tr["tool_call_name"], []).append(tr["meta"])
-            observation_agg.setdefault(tr["tool_call_name"], []).append(tr["tool_response"])
-            tool_input_agg.setdefault(tr["tool_call_name"], []).append(tr.get("tool_call_args", {}))
+            tool_invoke_meta_agg[tr["tool_call_name"]].append(tr["meta"])
+            observation_agg[tr["tool_call_name"]].append(tr["tool_response"])
+            tool_input_agg[tr["tool_call_name"]].append(tr.get("tool_call_args", {}))
         tool_invoke_meta = self._flatten(tool_invoke_meta_agg)
         observation = self._flatten(observation_agg)
         tool_input = self._flatten(tool_input_agg)
