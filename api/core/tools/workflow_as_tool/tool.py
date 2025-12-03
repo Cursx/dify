@@ -128,6 +128,7 @@ class WorkflowTool(Tool):
         self._latest_usage = self._derive_usage_from_result(data)
 
         # Handle final output message
+        text_content = json.dumps(outputs, ensure_ascii=False)
         if return_direct_flag:
             # If return_direct is true, we try to find a string to output directly
             string_values = []
@@ -143,13 +144,9 @@ class WorkflowTool(Tool):
                         string_values.append(str(v))
 
             if string_values:
-                yield self.create_text_message("\n".join(string_values))
-            else:
-                # Fallback for safety, though usually a direct return implies a string
-                yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
-        else:
-            # Original behavior if not returning directly
-            yield self.create_text_message(json.dumps(outputs, ensure_ascii=False))
+                text_content = "\n".join(string_values)
+
+        yield self.create_text_message(text_content)
 
         # Always yield json for observation and the return_direct variable if needed
         yield self.create_json_message(outputs, suppress_output=True)

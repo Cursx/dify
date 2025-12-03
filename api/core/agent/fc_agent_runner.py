@@ -316,28 +316,11 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         # yield final answer
         # calculate usage
         llm_final_usage = llm_usage.get("usage") or LLMUsage.empty_usage()
-        yield LLMResultChunk(
-            model=self.model_instance.model,
+        yield from self._yield_final_answer(
+            final_answer=final_answer,
             prompt_messages=prompt_messages,
-            system_fingerprint="",
-            delta=LLMResultChunkDelta(
-                index=0,
-                message=AssistantPromptMessage(content=""),
-                usage=llm_final_usage,
-            ),
-        )
-
-        self.queue_manager.publish(
-            QueueMessageEndEvent(
-                llm_result=LLMResult(
-                    model=self.model_instance.model,
-                    prompt_messages=prompt_messages,
-                    message=AssistantPromptMessage(content=final_answer),
-                    usage=llm_final_usage,
-                    system_fingerprint="",
-                )
-            ),
-            PublishFrom.APPLICATION_MANAGER,
+            usage=llm_final_usage,
+            delta_content="",
         )
 
     def check_tool_calls(self, llm_result_chunk: LLMResultChunk) -> bool:
@@ -408,12 +391,8 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         """
         # Organize tool inputs by tool name, handling multiple calls to the same tool
         tool_inputs_map = {}
-        for tool_call in tool_calls:
-            name = tool_call[1]
-            args = tool_call[2]
-            if name not in tool_inputs_map:
-                tool_inputs_map[name] = []
-            tool_inputs_map[name].append(args)
+        for _, name, args in tool_calls:
+            tool_inputs_map.setdefault(name, []).append(args)
 
         # Flatten single inputs for backward compatibility or simpler structure
         final_tool_inputs = {
@@ -448,6 +427,37 @@ class FunctionCallAgentRunner(BaseAgentRunner):
     @staticmethod
     def _flatten(agg_dict: dict[str, list[Any]]) -> dict[str, Any]:
         return {k: (v[0] if len(v) == 1 else v) for k, v in agg_dict.items()}
+
+    def _yield_final_answer(
+        self,
+        final_answer: str,
+        prompt_messages: list[PromptMessage],
+        usage: LLMUsage,
+        delta_content: str = "",
+    ) -> Generator[LLMResultChunk, None, None]:
+        yield LLMResultChunk(
+            model=self.model_instance.model,
+            prompt_messages=prompt_messages,
+            system_fingerprint="",
+            delta=LLMResultChunkDelta(
+                index=0,
+                message=AssistantPromptMessage(content=delta_content),
+                usage=usage,
+            ),
+        )
+
+        self.queue_manager.publish(
+            QueueMessageEndEvent(
+                llm_result=LLMResult(
+                    model=self.model_instance.model,
+                    prompt_messages=prompt_messages,
+                    message=AssistantPromptMessage(content=final_answer),
+                    usage=usage,
+                    system_fingerprint="",
+                )
+            ),
+            PublishFrom.APPLICATION_MANAGER,
+        )
 
     def _handle_direct_return(
         self,
@@ -511,28 +521,11 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         # In return_direct mode, the final answer is already provided by the tool response.
         # The _yield_final_answer will re-emit the content if we pass it.
         # So we pass an empty string for content to avoid duplication, but keep usage.
-        yield LLMResultChunk(
-            model=self.model_instance.model,
+        yield from self._yield_final_answer(
+            final_answer=final_answer,
             prompt_messages=prompt_messages,
-            system_fingerprint="",
-            delta=LLMResultChunkDelta(
-                index=0,
-                message=AssistantPromptMessage(content=""),
-                usage=usage,
-            ),
-        )
-
-        self.queue_manager.publish(
-            QueueMessageEndEvent(
-                llm_result=LLMResult(
-                    model=self.model_instance.model,
-                    prompt_messages=prompt_messages,
-                    message=AssistantPromptMessage(content=final_answer),
-                    usage=usage,
-                    system_fingerprint="",
-                )
-            ),
-            PublishFrom.APPLICATION_MANAGER,
+            usage=usage,
+            delta_content="",
         )
 
     def _init_system_message(self, prompt_template: str, prompt_messages: list[PromptMessage]) -> list[PromptMessage]:
