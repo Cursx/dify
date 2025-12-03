@@ -71,6 +71,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
         function_call_state = True
         llm_usage: dict[str, LLMUsage | None] = {"usage": None}
         final_answer = ""
+        direct_flag = False
         prompt_messages: list = []  # Initialize prompt_messages
         agent_thought_id = ""  # Initialize agent_thought_id
 
@@ -242,9 +243,9 @@ class CotAgentRunner(BaseAgentRunner, ABC):
 
             iteration_step += 1
 
-        if not direct_flag:
+        def _save_and_publish_final_thought(thought_id: str):
             self.save_agent_thought(
-                agent_thought_id=agent_thought_id,
+                agent_thought_id=thought_id,
                 tool_name="",
                 tool_input={},
                 tool_invoke_meta={},
@@ -254,8 +255,11 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                 messages_ids=[],
             )
             self.queue_manager.publish(
-                QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
+                QueueAgentThoughtEvent(agent_thought_id=thought_id), PublishFrom.APPLICATION_MANAGER
             )
+
+        if not direct_flag:
+            _save_and_publish_final_thought(agent_thought_id)
         else:
             # In return_direct mode, we need to create a new thought for the final answer
             # to avoid overwriting the tool execution thought (which has tool_name/input).
@@ -267,19 +271,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                 tool_input="",
                 messages_ids=[],
             )
-            self.save_agent_thought(
-                agent_thought_id=final_answer_thought_id,
-                tool_name="",
-                tool_input={},
-                tool_invoke_meta={},
-                thought=final_answer,
-                observation={},
-                answer=final_answer,
-                messages_ids=[],
-            )
-            self.queue_manager.publish(
-                QueueAgentThoughtEvent(agent_thought_id=final_answer_thought_id), PublishFrom.APPLICATION_MANAGER
-            )
+            _save_and_publish_final_thought(final_answer_thought_id)
 
         yield LLMResultChunk(
             model=model_instance.model,
