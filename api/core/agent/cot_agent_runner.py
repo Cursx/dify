@@ -242,19 +242,44 @@ class CotAgentRunner(BaseAgentRunner, ABC):
 
             iteration_step += 1
 
-        self.save_agent_thought(
-            agent_thought_id=agent_thought_id,
-            tool_name="",
-            tool_input={},
-            tool_invoke_meta={},
-            thought=final_answer,
-            observation={},
-            answer=final_answer,
-            messages_ids=[],
-        )
-        self.queue_manager.publish(
-            QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
-        )
+        if not direct_flag:
+            self.save_agent_thought(
+                agent_thought_id=agent_thought_id,
+                tool_name="",
+                tool_input={},
+                tool_invoke_meta={},
+                thought=final_answer,
+                observation={},
+                answer=final_answer,
+                messages_ids=[],
+            )
+            self.queue_manager.publish(
+                QueueAgentThoughtEvent(agent_thought_id=agent_thought_id), PublishFrom.APPLICATION_MANAGER
+            )
+        else:
+            # In return_direct mode, we need to create a new thought for the final answer
+            # to avoid overwriting the tool execution thought (which has tool_name/input).
+            # This ensures the UI renders both the tool card and the final answer bubble.
+            final_answer_thought_id = self.create_agent_thought(
+                message_id=self.message.id,
+                message=final_answer,
+                tool_name="",
+                tool_input="",
+                messages_ids=[],
+            )
+            self.save_agent_thought(
+                agent_thought_id=final_answer_thought_id,
+                tool_name="",
+                tool_input={},
+                tool_invoke_meta={},
+                thought=final_answer,
+                observation={},
+                answer=final_answer,
+                messages_ids=[],
+            )
+            self.queue_manager.publish(
+                QueueAgentThoughtEvent(agent_thought_id=final_answer_thought_id), PublishFrom.APPLICATION_MANAGER
+            )
 
         yield LLMResultChunk(
             model=model_instance.model,
