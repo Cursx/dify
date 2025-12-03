@@ -445,6 +445,10 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             "direct_flag": direct_flag,
         }
 
+    @staticmethod
+    def _flatten(agg_dict: dict[str, list[Any]]) -> dict[str, Any]:
+        return {k: (v[0] if len(v) == 1 else v) for k, v in agg_dict.items()}
+
     def _handle_direct_return(
         self,
         agent_thought_id: str,
@@ -454,9 +458,6 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         prompt_messages: list[PromptMessage],
         usage: LLMUsage,
     ) -> Generator[LLMResultChunk, None, None]:
-        def _flatten(agg_dict: dict[str, list[Any]]) -> dict[str, Any]:
-            return {k: (v[0] if len(v) == 1 else v) for k, v in agg_dict.items()}
-
         def _save_and_publish_thought(thought_id: str, **kwargs):
             self.save_agent_thought(agent_thought_id=thought_id, **kwargs)
             self.queue_manager.publish(
@@ -473,9 +474,9 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             tool_invoke_meta_agg.setdefault(tr["tool_call_name"], []).append(tr["meta"])
             observation_agg.setdefault(tr["tool_call_name"], []).append(tr["tool_response"])
             tool_input_agg.setdefault(tr["tool_call_name"], []).append(tr.get("tool_call_args", {}))
-        tool_invoke_meta = _flatten(tool_invoke_meta_agg)
-        observation = _flatten(observation_agg)
-        tool_input = _flatten(tool_input_agg)
+        tool_invoke_meta = self._flatten(tool_invoke_meta_agg)
+        observation = self._flatten(observation_agg)
+        tool_input = self._flatten(tool_input_agg)
         tool_name = ";".join(sorted({tr["tool_call_name"] for tr in tool_responses}))
 
         _save_and_publish_thought(
