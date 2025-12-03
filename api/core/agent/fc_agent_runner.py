@@ -522,9 +522,14 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             messages_ids=message_file_ids,
         )
 
-        # In return_direct mode, the final answer is already provided by the tool response.
-        # The _yield_final_answer will re-emit the content if we pass it.
-        # So we pass an empty string for content to avoid duplication, but keep usage.
+        # In return_direct mode, we should NOT stream the content via delta_content.
+        # 1. For text tools: The frontend will render the result via the AgentThought event (final_answer).
+        #    Streaming it here would duplicate the content.
+        # 2. For rich media tools (e.g., ECharts, JSON): The tool output is structured data.
+        #    Forcing it into delta_content (which expects text) would send raw JSON strings (e.g., "{'a': 1}")
+        #    to the chat bubble, which breaks the frontend renderer and looks bad.
+        # Therefore, we send delta_content="" to keep the chat bubble clean and rely on the
+        # tool's native rendering logic (AgentThought) to display the result.
         yield from self._yield_final_answer(
             final_answer=final_answer,
             prompt_messages=prompt_messages,
