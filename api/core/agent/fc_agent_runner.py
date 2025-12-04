@@ -389,6 +389,9 @@ class FunctionCallAgentRunner(BaseAgentRunner):
     def _prepare_tool_inputs(self, tool_calls: list[tuple[str, str, dict[str, Any]]]) -> str:
         """
         Prepare tool inputs from tool calls, handling multiple calls to the same tool.
+
+        :param tool_calls: List of tool calls (id, name, args).
+        :return: JSON string of organized tool inputs.
         """
         # Organize tool inputs by tool name, handling multiple calls to the same tool
         tool_inputs_map = defaultdict(list)
@@ -410,6 +413,17 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         tool_invoke_meta: ToolInvokeMeta,
         direct_flag: bool,
     ) -> dict[str, Any]:
+        """
+        Create a standardized tool response dictionary.
+
+        :param tool_call_id: The ID of the tool call.
+        :param tool_call_name: The name of the tool called.
+        :param tool_call_args: The arguments passed to the tool.
+        :param tool_invoke_response: The response string from the tool invocation.
+        :param tool_invoke_meta: Metadata associated with the tool invocation.
+        :param direct_flag: Boolean flag indicating if this is a direct return.
+        :return: A dictionary containing structured tool response data.
+        """
         return {
             "tool_call_id": tool_call_id,
             "tool_call_name": tool_call_name,
@@ -421,6 +435,13 @@ class FunctionCallAgentRunner(BaseAgentRunner):
 
     @staticmethod
     def _flatten(agg_dict: dict[str, list[Any]]) -> dict[str, Any]:
+        """
+        Flatten a dictionary of lists into a dictionary of single values.
+        If a list has only one element, it is replaced by that element.
+
+        :param agg_dict: The dictionary to flatten.
+        :return: The flattened dictionary.
+        """
         return {k: (v[0] if len(v) == 1 else v) for k, v in agg_dict.items()}
 
     def _yield_final_answer(
@@ -430,6 +451,15 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         usage: LLMUsage,
         delta_content: str = "",
     ) -> Generator[LLMResultChunk, None, None]:
+        """
+        Yield the final answer as an LLMResultChunk and publish the MessageEndEvent.
+
+        :param final_answer: The final answer content.
+        :param prompt_messages: The prompt messages.
+        :param usage: The usage statistics.
+        :param delta_content: The content to be yielded in the chunk delta. Defaults to "" to avoid duplicate display when yielding final answer.
+        :return: A generator yielding LLMResultChunk.
+        """
         yield LLMResultChunk(
             model=self.model_instance.model,
             prompt_messages=prompt_messages,
@@ -455,6 +485,12 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         )
 
     def _save_and_publish_thought(self, thought_id: str, **kwargs):
+        """
+        Save and publish an agent thought.
+
+        :param thought_id: The thought ID.
+        :param kwargs: Additional arguments to be passed to save_agent_thought.
+        """
         self.save_agent_thought(agent_thought_id=thought_id, **kwargs)
         self.queue_manager.publish(
             QueueAgentThoughtEvent(agent_thought_id=thought_id), PublishFrom.APPLICATION_MANAGER
@@ -469,6 +505,17 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         prompt_messages: list[PromptMessage],
         usage: LLMUsage,
     ) -> Generator[LLMResultChunk, None, None]:
+        """
+        Handle the direct return process when a tool is invoked with return_direct=True.
+
+        :param agent_thought_id: The agent thought ID.
+        :param tool_responses: The tool responses.
+        :param thought: The thought content.
+        :param message_file_ids: The message file IDs.
+        :param prompt_messages: The prompt messages.
+        :param usage: The usage statistics.
+        :return: A generator yielding LLMResultChunk.
+        """
         final_answer = "\n".join(
             [str(tr["tool_response"]) for tr in tool_responses if tr.get("tool_response") is not None]
         )
