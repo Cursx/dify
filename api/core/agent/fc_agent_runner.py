@@ -431,8 +431,9 @@ class FunctionCallAgentRunner(BaseAgentRunner):
             "direct_flag": direct_flag,
         }
 
+    @staticmethod
     def _aggregate_by_tool_name(
-        self, tool_responses: list[dict[str, Any]], value_key: str, default: Any = None
+        tool_responses: list[dict[str, Any]], value_key: str, default: Any = None
     ) -> dict[str, Any]:
         """
         Aggregate tool response values by tool name.
@@ -445,7 +446,7 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         agg = defaultdict(list)
         for tr in tool_responses:
             agg[tr["tool_call_name"]].append(tr.get(value_key, default))
-        return self._flatten(agg)
+        return FunctionCallAgentRunner._flatten(agg)
 
     @staticmethod
     def _flatten(agg_dict: dict[str, list[Any]]) -> dict[str, Any]:
