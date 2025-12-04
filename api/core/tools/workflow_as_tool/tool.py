@@ -131,6 +131,9 @@ class WorkflowTool(Tool):
         text_content = json.dumps(outputs, ensure_ascii=False)
         if return_direct_flag:
             # If return_direct is true, we try to find a string to output directly
+            # Iterate over values directly to preserve the order defined by the user in the workflow configuration.
+            # In Python 3.7+, dictionary insertion order is preserved.
+            # DO NOT sort by keys, as this would break the user's intended output order.
             string_values = []
             for v in outputs.values():
                 if v is None:
