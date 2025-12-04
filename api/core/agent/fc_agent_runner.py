@@ -289,18 +289,22 @@ class FunctionCallAgentRunner(BaseAgentRunner):
                             )
                         )
                 # save agent thought
+                tool_invoke_meta_agg = defaultdict(list)
+                observation_agg = defaultdict(list)
+                for tr in tool_responses:
+                    tool_invoke_meta_agg[tr["tool_call_name"]].append(tr["meta"])
+                    observation_agg[tr["tool_call_name"]].append(tr["tool_response"])
+
+                tool_invoke_meta = self._flatten(tool_invoke_meta_agg)
+                observation = self._flatten(observation_agg)
+
                 self.save_agent_thought(
                     agent_thought_id=agent_thought_id,
                     tool_name="",
                     tool_input="",
                     thought="",
-                    tool_invoke_meta={
-                        tool_response["tool_call_name"]: tool_response["meta"] for tool_response in tool_responses
-                    },
-                    observation={
-                        tool_response["tool_call_name"]: tool_response["tool_response"]
-                        for tool_response in tool_responses
-                    },
+                    tool_invoke_meta=tool_invoke_meta,
+                    observation=observation,
                     answer="",
                     messages_ids=message_file_ids,
                 )
