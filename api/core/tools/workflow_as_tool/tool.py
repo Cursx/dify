@@ -138,9 +138,7 @@ class WorkflowTool(Tool):
             for v in outputs.values():
                 if v is None:
                     continue
-                if isinstance(v, str):
-                    string_values.append(v)
-                elif isinstance(v, (dict, list)):
+                if isinstance(v, (dict, list)):
                     string_values.append(json.dumps(v, ensure_ascii=False))
                 else:
                     string_values.append(str(v))
