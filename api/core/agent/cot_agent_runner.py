@@ -256,7 +256,7 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                 tool_input="",
                 messages_ids=[],
             )
-            self._save_and_publish_final_thought(final_answer_thought_id, final_answer, thought="")
+            self._save_and_publish_final_thought(final_answer_thought_id, final_answer, thought=final_answer)
 
         yield LLMResultChunk(
             model=model_instance.model,
