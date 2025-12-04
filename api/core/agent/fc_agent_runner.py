@@ -445,7 +445,8 @@ class FunctionCallAgentRunner(BaseAgentRunner):
         """
         agg = defaultdict(list)
         for tr in tool_responses:
-            agg[tr["tool_call_name"]].append(tr.get(value_key, default))
+            if "tool_call_name" in tr:
+                agg[tr["tool_call_name"]].append(tr.get(value_key, default))
         return FunctionCallAgentRunner._flatten(agg)
 
     @staticmethod
