@@ -249,7 +249,6 @@ class CotAgentRunner(BaseAgentRunner, ABC):
                 tool_name="",
                 tool_input={},
                 tool_invoke_meta={},
-                thought=final_answer,
                 observation={},
                 answer=final_answer,
                 messages_ids=[],
