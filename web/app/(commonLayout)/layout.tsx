@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import SwrInitializer from '@/app/components/swr-initializer'
 import { AppContextProvider } from '@/context/app-context'
 import GA, { GaType } from '@/app/components/base/ga'
-import AmplitudeProvider from '@/app/components/base/amplitude'
 import HeaderWrapper from '@/app/components/header/header-wrapper'
 import Header from '@/app/components/header'
 import { EventEmitterContextProvider } from '@/context/event-emitter'
@@ -19,7 +18,6 @@ const Layout = ({ children }: { children: ReactNode }) => {
   return (
     <>
       <GA gaType={GaType.admin} />
-      <AmplitudeProvider />
       <SwrInitializer>
         <AppContextProvider>
           <EventEmitterContextProvider>

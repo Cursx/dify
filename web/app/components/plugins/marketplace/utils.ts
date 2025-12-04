@@ -13,14 +13,6 @@ import {
 } from '@/config'
 import { getMarketplaceUrl } from '@/utils/var'
 
-type MarketplaceFetchOptions = {
-  signal?: AbortSignal
-}
-
-const getMarketplaceHeaders = () => new Headers({
-  'X-Dify-Version': !IS_MARKETPLACE ? APP_VERSION : '999.0.0',
-})
-
 export const getPluginIconInMarketplace = (plugin: Plugin) => {
   if (plugin.type === 'bundle')
     return `${MARKETPLACE_API_PREFIX}/bundles/${plugin.org}/${plugin.name}/icon`
@@ -54,23 +46,20 @@ export const getPluginDetailLinkInMarketplace = (plugin: Plugin) => {
   return `/plugins/${plugin.org}/${plugin.name}`
 }
 
-export const getMarketplacePluginsByCollectionId = async (
-  collectionId: string,
-  query?: CollectionsAndPluginsSearchParams,
-  options?: MarketplaceFetchOptions,
-) => {
-  let plugins: Plugin[] = []
+export const getMarketplacePluginsByCollectionId = async (collectionId: string, query?: CollectionsAndPluginsSearchParams) => {
+  let plugins: Plugin[]
 
   try {
     const url = `${MARKETPLACE_API_PREFIX}/collections/${collectionId}/plugins`
-    const headers = getMarketplaceHeaders()
+    const headers = new Headers({
+      'X-Dify-Version': !IS_MARKETPLACE ? APP_VERSION : '999.0.0',
+    })
     const marketplaceCollectionPluginsData = await globalThis.fetch(
       url,
       {
         cache: 'no-store',
         method: 'POST',
         headers,
-        signal: options?.signal,
         body: JSON.stringify({
           category: query?.category,
           exclude: query?.exclude,
@@ -79,7 +68,9 @@ export const getMarketplacePluginsByCollectionId = async (
       },
     )
     const marketplaceCollectionPluginsDataJson = await marketplaceCollectionPluginsData.json()
-    plugins = (marketplaceCollectionPluginsDataJson.data.plugins || []).map((plugin: Plugin) => getFormattedPlugin(plugin))
+    plugins = marketplaceCollectionPluginsDataJson.data.plugins.map((plugin: Plugin) => {
+      return getFormattedPlugin(plugin)
+    })
   }
   // eslint-disable-next-line unused-imports/no-unused-vars
   catch (e) {
@@ -89,31 +80,23 @@ export const getMarketplacePluginsByCollectionId = async (
   return plugins
 }
 
-export const getMarketplaceCollectionsAndPlugins = async (
-  query?: CollectionsAndPluginsSearchParams,
-  options?: MarketplaceFetchOptions,
-) => {
-  let marketplaceCollections: MarketplaceCollection[] = []
-  let marketplaceCollectionPluginsMap: Record<string, Plugin[]> = {}
+export const getMarketplaceCollectionsAndPlugins = async (query?: CollectionsAndPluginsSearchParams) => {
+  let marketplaceCollections = [] as MarketplaceCollection[]
+  let marketplaceCollectionPluginsMap = {} as Record<string, Plugin[]>
   try {
     let marketplaceUrl = `${MARKETPLACE_API_PREFIX}/collections?page=1&page_size=100`
     if (query?.condition)
       marketplaceUrl += `&condition=${query.condition}`
     if (query?.type)
       marketplaceUrl += `&type=${query.type}`
-    const headers = getMarketplaceHeaders()
-    const marketplaceCollectionsData = await globalThis.fetch(
-      marketplaceUrl,
-      {
-        headers,
-        cache: 'no-store',
-        signal: options?.signal,
-      },
-    )
+    const headers = new Headers({
+      'X-Dify-Version': !IS_MARKETPLACE ? APP_VERSION : '999.0.0',
+    })
+    const marketplaceCollectionsData = await globalThis.fetch(marketplaceUrl, { headers, cache: 'no-store' })
     const marketplaceCollectionsDataJson = await marketplaceCollectionsData.json()
-    marketplaceCollections = marketplaceCollectionsDataJson.data.collections || []
+    marketplaceCollections = marketplaceCollectionsDataJson.data.collections
     await Promise.all(marketplaceCollections.map(async (collection: MarketplaceCollection) => {
-      const plugins = await getMarketplacePluginsByCollectionId(collection.name, query, options)
+      const plugins = await getMarketplacePluginsByCollectionId(collection.name, query)
 
       marketplaceCollectionPluginsMap[collection.name] = plugins
     }))

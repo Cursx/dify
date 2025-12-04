@@ -316,16 +316,18 @@ def validate_and_get_api_token(scope: str | None = None):
                 ApiToken.type == scope,
             )
             .values(last_used_at=current_time)
+            .returning(ApiToken)
         )
-        stmt = select(ApiToken).where(ApiToken.token == auth_token, ApiToken.type == scope)
         result = session.execute(update_stmt)
-        api_token = session.scalar(stmt)
-
-        if hasattr(result, "rowcount") and result.rowcount > 0:
-            session.commit()
+        api_token = result.scalar_one_or_none()
 
         if not api_token:
-            raise Unauthorized("Access token is invalid")
+            stmt = select(ApiToken).where(ApiToken.token == auth_token, ApiToken.type == scope)
+            api_token = session.scalar(stmt)
+            if not api_token:
+                raise Unauthorized("Access token is invalid")
+        else:
+            session.commit()
 
     return api_token
 

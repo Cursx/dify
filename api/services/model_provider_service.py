@@ -79,7 +79,6 @@ class ModelProviderService:
                 label=provider_configuration.provider.label,
                 description=provider_configuration.provider.description,
                 icon_small=provider_configuration.provider.icon_small,
-                icon_small_dark=provider_configuration.provider.icon_small_dark,
                 icon_large=provider_configuration.provider.icon_large,
                 background=provider_configuration.provider.background,
                 help=provider_configuration.provider.help,
@@ -403,7 +402,6 @@ class ModelProviderService:
                     provider=provider,
                     label=first_model.provider.label,
                     icon_small=first_model.provider.icon_small,
-                    icon_small_dark=first_model.provider.icon_small_dark,
                     icon_large=first_model.provider.icon_large,
                     status=CustomConfigurationStatus.ACTIVE,
                     models=[

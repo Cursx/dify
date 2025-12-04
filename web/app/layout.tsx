@@ -1,4 +1,3 @@
-import { ReactScan } from './components/react-scan'
 import RoutePrefixHandle from './routePrefixHandle'
 import type { Viewport } from 'next'
 import I18nServer from './components/i18n-server'
@@ -87,7 +86,6 @@ const LocaleLayout = async ({
         className='color-scheme h-full select-auto'
         {...datasetMap}
       >
-        <ReactScan />
         <ThemeProvider
           attribute='data-theme'
           defaultTheme='system'

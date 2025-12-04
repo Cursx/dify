@@ -49,6 +49,7 @@ class CompletionConversationQuery(BaseConversationQuery):
 
 
 class ChatConversationQuery(BaseConversationQuery):
+    message_count_gte: int | None = Field(default=None, ge=1, description="Minimum message count")
     sort_by: Literal["created_at", "-created_at", "updated_at", "-updated_at"] = Field(
         default="-updated_at", description="Sort field and direction"
     )
@@ -506,6 +507,14 @@ class ChatConversationApi(Resource):
                 query.outerjoin(MessageAnnotation, MessageAnnotation.conversation_id == Conversation.id)
                 .group_by(Conversation.id)
                 .having(func.count(MessageAnnotation.id) == 0)
+            )
+
+        if args.message_count_gte and args.message_count_gte >= 1:
+            query = (
+                query.options(joinedload(Conversation.messages))  # type: ignore
+                .join(Message, Message.conversation_id == Conversation.id)
+                .group_by(Conversation.id)
+                .having(func.count(Message.id) >= args.message_count_gte)
             )
 
         if app_model.mode == AppMode.ADVANCED_CHAT:

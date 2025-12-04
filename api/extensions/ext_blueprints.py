@@ -6,7 +6,6 @@ BASE_CORS_HEADERS: tuple[str, ...] = ("Content-Type", HEADER_NAME_APP_CODE, HEAD
 SERVICE_API_HEADERS: tuple[str, ...] = (*BASE_CORS_HEADERS, "Authorization")
 AUTHENTICATED_HEADERS: tuple[str, ...] = (*SERVICE_API_HEADERS, HEADER_NAME_CSRF_TOKEN)
 FILES_HEADERS: tuple[str, ...] = (*BASE_CORS_HEADERS, HEADER_NAME_CSRF_TOKEN)
-EXPOSED_HEADERS: tuple[str, ...] = ("X-Version", "X-Env", "X-Trace-Id")
 
 
 def init_app(app: DifyApp):
@@ -26,7 +25,6 @@ def init_app(app: DifyApp):
         service_api_bp,
         allow_headers=list(SERVICE_API_HEADERS),
         methods=["GET", "PUT", "POST", "DELETE", "OPTIONS", "PATCH"],
-        expose_headers=list(EXPOSED_HEADERS),
     )
     app.register_blueprint(service_api_bp)
 
@@ -36,7 +34,7 @@ def init_app(app: DifyApp):
         supports_credentials=True,
         allow_headers=list(AUTHENTICATED_HEADERS),
         methods=["GET", "PUT", "POST", "DELETE", "OPTIONS", "PATCH"],
-        expose_headers=list(EXPOSED_HEADERS),
+        expose_headers=["X-Version", "X-Env"],
     )
     app.register_blueprint(web_bp)
 
@@ -46,7 +44,7 @@ def init_app(app: DifyApp):
         supports_credentials=True,
         allow_headers=list(AUTHENTICATED_HEADERS),
         methods=["GET", "PUT", "POST", "DELETE", "OPTIONS", "PATCH"],
-        expose_headers=list(EXPOSED_HEADERS),
+        expose_headers=["X-Version", "X-Env"],
     )
     app.register_blueprint(console_app_bp)
 
@@ -54,7 +52,6 @@ def init_app(app: DifyApp):
         files_bp,
         allow_headers=list(FILES_HEADERS),
         methods=["GET", "PUT", "POST", "DELETE", "OPTIONS", "PATCH"],
-        expose_headers=list(EXPOSED_HEADERS),
     )
     app.register_blueprint(files_bp)
 
@@ -66,6 +63,5 @@ def init_app(app: DifyApp):
         trigger_bp,
         allow_headers=["Content-Type", "Authorization", "X-App-Code"],
         methods=["GET", "PUT", "POST", "DELETE", "OPTIONS", "PATCH", "HEAD"],
-        expose_headers=list(EXPOSED_HEADERS),
     )
     app.register_blueprint(trigger_bp)

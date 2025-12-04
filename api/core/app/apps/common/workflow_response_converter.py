@@ -1,4 +1,3 @@
-import logging
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -56,7 +55,6 @@ from models import Account, EndUser
 from services.variable_truncator import BaseTruncator, DummyVariableTruncator, VariableTruncator
 
 NodeExecutionId = NewType("NodeExecutionId", str)
-logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -291,30 +289,26 @@ class WorkflowResponseConverter:
             ),
         )
 
-        try:
-            if event.node_type == NodeType.TOOL:
-                response.data.extras["icon"] = ToolManager.get_tool_icon(
-                    tenant_id=self._application_generate_entity.app_config.tenant_id,
-                    provider_type=ToolProviderType(event.provider_type),
-                    provider_id=event.provider_id,
-                )
-            elif event.node_type == NodeType.DATASOURCE:
-                manager = PluginDatasourceManager()
-                provider_entity = manager.fetch_datasource_provider(
-                    self._application_generate_entity.app_config.tenant_id,
-                    event.provider_id,
-                )
-                response.data.extras["icon"] = provider_entity.declaration.identity.generate_datasource_icon_url(
-                    self._application_generate_entity.app_config.tenant_id
-                )
-            elif event.node_type == NodeType.TRIGGER_PLUGIN:
-                response.data.extras["icon"] = TriggerManager.get_trigger_plugin_icon(
-                    self._application_generate_entity.app_config.tenant_id,
-                    event.provider_id,
-                )
-        except Exception:
-            # metadata fetch may fail, for example, the plugin daemon is down or plugin is uninstalled.
-            logger.warning("failed to fetch icon for %s", event.provider_id)
+        if event.node_type == NodeType.TOOL:
+            response.data.extras["icon"] = ToolManager.get_tool_icon(
+                tenant_id=self._application_generate_entity.app_config.tenant_id,
+                provider_type=ToolProviderType(event.provider_type),
+                provider_id=event.provider_id,
+            )
+        elif event.node_type == NodeType.DATASOURCE:
+            manager = PluginDatasourceManager()
+            provider_entity = manager.fetch_datasource_provider(
+                self._application_generate_entity.app_config.tenant_id,
+                event.provider_id,
+            )
+            response.data.extras["icon"] = provider_entity.declaration.identity.generate_datasource_icon_url(
+                self._application_generate_entity.app_config.tenant_id
+            )
+        elif event.node_type == NodeType.TRIGGER_PLUGIN:
+            response.data.extras["icon"] = TriggerManager.get_trigger_plugin_icon(
+                self._application_generate_entity.app_config.tenant_id,
+                event.provider_id,
+            )
 
         return response
 

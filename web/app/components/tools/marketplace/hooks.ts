@@ -3,12 +3,12 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react'
 import {
   useMarketplaceCollectionsAndPlugins,
   useMarketplacePlugins,
 } from '@/app/components/plugins/marketplace/hooks'
-import { SCROLL_BOTTOM_THRESHOLD } from '@/app/components/plugins/marketplace/constants'
 import { PluginCategoryEnum } from '@/app/components/plugins/types'
 import { getMarketplaceListCondition } from '@/app/components/plugins/marketplace/utils'
 import { useAllToolProviders } from '@/service/use-tools'
@@ -31,10 +31,10 @@ export const useMarketplace = (searchPluginText: string, filterPluginTags: strin
     queryPlugins,
     queryPluginsWithDebounced,
     isLoading: isPluginsLoading,
-    fetchNextPage,
-    hasNextPage,
-    page: pluginsPage,
+    total: pluginsTotal,
   } = useMarketplacePlugins()
+  const [page, setPage] = useState(1)
+  const pageRef = useRef(page)
   const searchPluginTextRef = useRef(searchPluginText)
   const filterPluginTagsRef = useRef(filterPluginTags)
 
@@ -44,6 +44,9 @@ export const useMarketplace = (searchPluginText: string, filterPluginTags: strin
   }, [searchPluginText, filterPluginTags])
   useEffect(() => {
     if ((searchPluginText || filterPluginTags.length) && isSuccess) {
+      setPage(1)
+      pageRef.current = 1
+
       if (searchPluginText) {
         queryPluginsWithDebounced({
           category: PluginCategoryEnum.tool,
@@ -51,6 +54,7 @@ export const useMarketplace = (searchPluginText: string, filterPluginTags: strin
           tags: filterPluginTags,
           exclude,
           type: 'plugin',
+          page: pageRef.current,
         })
         return
       }
@@ -60,6 +64,7 @@ export const useMarketplace = (searchPluginText: string, filterPluginTags: strin
         tags: filterPluginTags,
         exclude,
         type: 'plugin',
+        page: pageRef.current,
       })
     }
     else {
@@ -82,13 +87,24 @@ export const useMarketplace = (searchPluginText: string, filterPluginTags: strin
       scrollHeight,
       clientHeight,
     } = target
-    if (scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD && scrollTop > 0) {
+    if (scrollTop + clientHeight >= scrollHeight - 5 && scrollTop > 0) {
       const searchPluginText = searchPluginTextRef.current
       const filterPluginTags = filterPluginTagsRef.current
-      if (hasNextPage && (!!searchPluginText || !!filterPluginTags.length))
-        fetchNextPage()
+      if (pluginsTotal && plugins && pluginsTotal > plugins.length && (!!searchPluginText || !!filterPluginTags.length)) {
+        setPage(pageRef.current + 1)
+        pageRef.current++
+
+        queryPlugins({
+          category: PluginCategoryEnum.tool,
+          query: searchPluginText,
+          tags: filterPluginTags,
+          exclude,
+          type: 'plugin',
+          page: pageRef.current,
+        })
+      }
     }
-  }, [exclude, fetchNextPage, hasNextPage, plugins, queryPlugins])
+  }, [exclude, plugins, pluginsTotal, queryPlugins])
 
   return {
     isLoading: isLoading || isPluginsLoading,
@@ -96,6 +112,6 @@ export const useMarketplace = (searchPluginText: string, filterPluginTags: strin
     marketplaceCollectionPluginsMap,
     plugins,
     handleScroll,
-    page: Math.max(pluginsPage || 0, 1),
+    page,
   }
 }

@@ -49,7 +49,6 @@ export type Collection = {
   author: string
   description: TypeWithI18N
   icon: string | Emoji
-  icon_dark?: string | Emoji
   label: TypeWithI18N
   type: CollectionType | string
   team_credentials: Record<string, any>

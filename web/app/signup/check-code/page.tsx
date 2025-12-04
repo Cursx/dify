@@ -42,6 +42,7 @@ export default function CheckCode() {
       }
       setIsLoading(true)
       const res = await verifyCode({ email, code, token })
+      console.log(res)
       if ((res as MailValidityResponse).is_valid) {
         const params = new URLSearchParams(searchParams)
         params.set('token', encodeURIComponent((res as MailValidityResponse).token))

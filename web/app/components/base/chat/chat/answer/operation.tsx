@@ -11,10 +11,7 @@ import {
   RiThumbDownLine,
   RiThumbUpLine,
 } from '@remixicon/react'
-import type {
-  ChatItem,
-  Feedback,
-} from '../../types'
+import type { ChatItem } from '../../types'
 import { useChatContext } from '../context'
 import copy from 'copy-to-clipboard'
 import Toast from '@/app/components/base/toast'
@@ -25,7 +22,6 @@ import ActionButton, { ActionButtonState } from '@/app/components/base/action-bu
 import NewAudioButton from '@/app/components/base/new-audio-button'
 import Modal from '@/app/components/base/modal/modal'
 import Textarea from '@/app/components/base/textarea'
-import Tooltip from '@/app/components/base/tooltip'
 import cn from '@/utils/classnames'
 
 type OperationProps = {
@@ -70,9 +66,8 @@ const Operation: FC<OperationProps> = ({
     adminFeedback,
     agent_thoughts,
   } = item
-  const [userLocalFeedback, setUserLocalFeedback] = useState(feedback)
+  const [localFeedback, setLocalFeedback] = useState(config?.supportAnnotation ? adminFeedback : feedback)
   const [adminLocalFeedback, setAdminLocalFeedback] = useState(adminFeedback)
-  const [feedbackTarget, setFeedbackTarget] = useState<'user' | 'admin'>('user')
 
   // Separate feedback types for display
   const userFeedback = feedback
@@ -84,68 +79,24 @@ const Operation: FC<OperationProps> = ({
     return messageContent
   }, [agent_thoughts, messageContent])
 
-  const displayUserFeedback = userLocalFeedback ?? userFeedback
-
-  const hasUserFeedback = !!displayUserFeedback?.rating
-  const hasAdminFeedback = !!adminLocalFeedback?.rating
-
-  const shouldShowUserFeedbackBar = !isOpeningStatement && config?.supportFeedback && !!onFeedback && !config?.supportAnnotation
-  const shouldShowAdminFeedbackBar = !isOpeningStatement && config?.supportFeedback && !!onFeedback && !!config?.supportAnnotation
-
-  const userFeedbackLabel = t('appLog.table.header.userRate') || 'User feedback'
-  const adminFeedbackLabel = t('appLog.table.header.adminRate') || 'Admin feedback'
-  const feedbackTooltipClassName = 'max-w-[260px]'
-
-  const buildFeedbackTooltip = (feedbackData?: Feedback | null, label = userFeedbackLabel) => {
-    if (!feedbackData?.rating)
-      return label
-
-    const ratingLabel = feedbackData.rating === 'like'
-      ? (t('appLog.detail.operation.like') || 'like')
-      : (t('appLog.detail.operation.dislike') || 'dislike')
-    const feedbackText = feedbackData.content?.trim()
-
-    if (feedbackText)
-      return `${label}: ${ratingLabel} - ${feedbackText}`
-
-    return `${label}: ${ratingLabel}`
-  }
-
-  const handleFeedback = async (rating: 'like' | 'dislike' | null, content?: string, target: 'user' | 'admin' = 'user') => {
+  const handleFeedback = async (rating: 'like' | 'dislike' | null, content?: string) => {
     if (!config?.supportFeedback || !onFeedback)
       return
 
     await onFeedback?.(id, { rating, content })
+    setLocalFeedback({ rating })
 
-    const nextFeedback = rating === null ? { rating: null } : { rating, content }
-
-    if (target === 'admin')
-      setAdminLocalFeedback(nextFeedback)
-    else
-      setUserLocalFeedback(nextFeedback)
+    // Update admin feedback state separately if annotation is supported
+    if (config?.supportAnnotation)
+      setAdminLocalFeedback(rating ? { rating } : undefined)
   }
 
-  const handleLikeClick = (target: 'user' | 'admin') => {
-    const currentRating = target === 'admin' ? adminLocalFeedback?.rating : displayUserFeedback?.rating
-    if (currentRating === 'like') {
-      handleFeedback(null, undefined, target)
-      return
-    }
-    handleFeedback('like', undefined, target)
-  }
-
-  const handleDislikeClick = (target: 'user' | 'admin') => {
-    const currentRating = target === 'admin' ? adminLocalFeedback?.rating : displayUserFeedback?.rating
-    if (currentRating === 'dislike') {
-      handleFeedback(null, undefined, target)
-      return
-    }
-    setFeedbackTarget(target)
+  const handleThumbsDown = () => {
     setIsShowFeedbackModal(true)
   }
 
   const handleFeedbackSubmit = async () => {
-    await handleFeedback('dislike', feedbackContent, feedbackTarget)
+    await handleFeedback('dislike', feedbackContent)
     setFeedbackContent('')
     setIsShowFeedbackModal(false)
   }
@@ -165,13 +116,12 @@ const Operation: FC<OperationProps> = ({
       width += 26
     if (!isOpeningStatement && config?.supportAnnotation && config?.annotation_reply?.enabled)
       width += 26
-    if (shouldShowUserFeedbackBar)
-      width += hasUserFeedback ? 28 + 8 : 60 + 8
-    if (shouldShowAdminFeedbackBar)
-      width += (hasAdminFeedback ? 28 : 60) + 8 + (hasUserFeedback ? 28 : 0)
-
+    if (config?.supportFeedback && !localFeedback?.rating && onFeedback && !isOpeningStatement)
+      width += 60 + 8
+    if (config?.supportFeedback && localFeedback?.rating && onFeedback && !isOpeningStatement)
+      width += 28 + 8
     return width
-  }, [config?.annotation_reply?.enabled, config?.supportAnnotation, config?.text_to_speech?.enabled, hasAdminFeedback, hasUserFeedback, isOpeningStatement, shouldShowAdminFeedbackBar, shouldShowUserFeedbackBar, showPromptLog])
+  }, [isOpeningStatement, showPromptLog, config?.text_to_speech?.enabled, config?.supportAnnotation, config?.annotation_reply?.enabled, config?.supportFeedback, localFeedback?.rating, onFeedback])
 
   const positionRight = useMemo(() => operationWidth < maxSize, [operationWidth, maxSize])
 
@@ -186,110 +136,6 @@ const Operation: FC<OperationProps> = ({
         )}
         style={(!hasWorkflowProcess && positionRight) ? { left: contentWidth + 8 } : {}}
       >
-        {shouldShowUserFeedbackBar && (
-          <div className={cn(
-            'ml-1 items-center gap-0.5 rounded-[10px] border-[0.5px] border-components-actionbar-border bg-components-actionbar-bg p-0.5 shadow-md backdrop-blur-sm',
-            hasUserFeedback ? 'flex' : 'hidden group-hover:flex',
-          )}>
-            {hasUserFeedback ? (
-              <Tooltip
-                popupContent={buildFeedbackTooltip(displayUserFeedback, userFeedbackLabel)}
-                popupClassName={feedbackTooltipClassName}
-              >
-                <ActionButton
-                  state={displayUserFeedback?.rating === 'like' ? ActionButtonState.Active : ActionButtonState.Destructive}
-                  onClick={() => handleFeedback(null, undefined, 'user')}
-                >
-                  {displayUserFeedback?.rating === 'like'
-                    ? <RiThumbUpLine className='h-4 w-4' />
-                    : <RiThumbDownLine className='h-4 w-4' />}
-                </ActionButton>
-              </Tooltip>
-            ) : (
-              <>
-                <ActionButton
-                  state={displayUserFeedback?.rating === 'like' ? ActionButtonState.Active : ActionButtonState.Default}
-                  onClick={() => handleLikeClick('user')}
-                >
-                  <RiThumbUpLine className='h-4 w-4' />
-                </ActionButton>
-                <ActionButton
-                  state={displayUserFeedback?.rating === 'dislike' ? ActionButtonState.Destructive : ActionButtonState.Default}
-                  onClick={() => handleDislikeClick('user')}
-                >
-                  <RiThumbDownLine className='h-4 w-4' />
-                </ActionButton>
-              </>
-            )}
-          </div>
-        )}
-        {shouldShowAdminFeedbackBar && (
-          <div className={cn(
-            'ml-1 items-center gap-0.5 rounded-[10px] border-[0.5px] border-components-actionbar-border bg-components-actionbar-bg p-0.5 shadow-md backdrop-blur-sm',
-            (hasAdminFeedback || hasUserFeedback) ? 'flex' : 'hidden group-hover:flex',
-          )}>
-            {/* User Feedback Display */}
-            {displayUserFeedback?.rating && (
-              <Tooltip
-                popupContent={buildFeedbackTooltip(displayUserFeedback, userFeedbackLabel)}
-                popupClassName={feedbackTooltipClassName}
-              >
-                {displayUserFeedback.rating === 'like' ? (
-                  <ActionButton state={ActionButtonState.Active}>
-                    <RiThumbUpLine className='h-4 w-4' />
-                  </ActionButton>
-                ) : (
-                  <ActionButton state={ActionButtonState.Destructive}>
-                    <RiThumbDownLine className='h-4 w-4' />
-                  </ActionButton>
-                )}
-              </Tooltip>
-            )}
-
-            {/* Admin Feedback Controls */}
-            {displayUserFeedback?.rating && <div className='mx-1 h-3 w-[0.5px] bg-components-actionbar-border' />}
-            {hasAdminFeedback ? (
-              <Tooltip
-                popupContent={buildFeedbackTooltip(adminLocalFeedback, adminFeedbackLabel)}
-                popupClassName={feedbackTooltipClassName}
-              >
-                <ActionButton
-                  state={adminLocalFeedback?.rating === 'like' ? ActionButtonState.Active : ActionButtonState.Destructive}
-                  onClick={() => handleFeedback(null, undefined, 'admin')}
-                >
-                  {adminLocalFeedback?.rating === 'like'
-                    ? <RiThumbUpLine className='h-4 w-4' />
-                    : <RiThumbDownLine className='h-4 w-4' />}
-                </ActionButton>
-              </Tooltip>
-            ) : (
-              <>
-                <Tooltip
-                  popupContent={buildFeedbackTooltip(adminLocalFeedback, adminFeedbackLabel)}
-                  popupClassName={feedbackTooltipClassName}
-                >
-                  <ActionButton
-                    state={adminLocalFeedback?.rating === 'like' ? ActionButtonState.Active : ActionButtonState.Default}
-                    onClick={() => handleLikeClick('admin')}
-                  >
-                    <RiThumbUpLine className='h-4 w-4' />
-                  </ActionButton>
-                </Tooltip>
-                <Tooltip
-                  popupContent={buildFeedbackTooltip(adminLocalFeedback, adminFeedbackLabel)}
-                  popupClassName={feedbackTooltipClassName}
-                >
-                  <ActionButton
-                    state={adminLocalFeedback?.rating === 'dislike' ? ActionButtonState.Destructive : ActionButtonState.Default}
-                    onClick={() => handleDislikeClick('admin')}
-                  >
-                    <RiThumbDownLine className='h-4 w-4' />
-                  </ActionButton>
-                </Tooltip>
-              </>
-            )}
-          </div>
-        )}
         {showPromptLog && !isOpeningStatement && (
           <div className='hidden group-hover:block'>
             <Log logItem={item} />
@@ -326,6 +172,69 @@ const Operation: FC<OperationProps> = ({
                 onEdit={() => setIsShowReplyModal(true)}
               />
             )}
+          </div>
+        )}
+        {!isOpeningStatement && config?.supportFeedback && !localFeedback?.rating && onFeedback && (
+          <div className='ml-1 hidden items-center gap-0.5 rounded-[10px] border-[0.5px] border-components-actionbar-border bg-components-actionbar-bg p-0.5 shadow-md backdrop-blur-sm group-hover:flex'>
+            {!localFeedback?.rating && (
+              <>
+                <ActionButton onClick={() => handleFeedback('like')}>
+                  <RiThumbUpLine className='h-4 w-4' />
+                </ActionButton>
+                <ActionButton onClick={handleThumbsDown}>
+                  <RiThumbDownLine className='h-4 w-4' />
+                </ActionButton>
+              </>
+            )}
+          </div>
+        )}
+        {!isOpeningStatement && config?.supportFeedback && onFeedback && (
+          <div className='ml-1 flex items-center gap-0.5 rounded-[10px] border-[0.5px] border-components-actionbar-border bg-components-actionbar-bg p-0.5 shadow-md backdrop-blur-sm'>
+            {/* User Feedback Display */}
+            {userFeedback?.rating && (
+              <div className='flex items-center'>
+                <span className='mr-1 text-xs text-text-tertiary'>User</span>
+                {userFeedback.rating === 'like' ? (
+                  <ActionButton state={ActionButtonState.Active} title={userFeedback.content ? `User liked this response: ${userFeedback.content}` : 'User liked this response'}>
+                    <RiThumbUpLine className='h-3 w-3' />
+                  </ActionButton>
+                ) : (
+                  <ActionButton state={ActionButtonState.Destructive} title={userFeedback.content ? `User disliked this response: ${userFeedback.content}` : 'User disliked this response'}>
+                    <RiThumbDownLine className='h-3 w-3' />
+                  </ActionButton>
+                )}
+              </div>
+            )}
+
+            {/* Admin Feedback Controls */}
+            {config?.supportAnnotation && (
+              <div className='flex items-center'>
+                {userFeedback?.rating && <div className='mx-1 h-3 w-[0.5px] bg-components-actionbar-border' />}
+                {!adminLocalFeedback?.rating ? (
+                  <>
+                    <ActionButton onClick={() => handleFeedback('like')}>
+                      <RiThumbUpLine className='h-4 w-4' />
+                    </ActionButton>
+                    <ActionButton onClick={handleThumbsDown}>
+                      <RiThumbDownLine className='h-4 w-4' />
+                    </ActionButton>
+                  </>
+                ) : (
+                  <>
+                    {adminLocalFeedback.rating === 'like' ? (
+                      <ActionButton state={ActionButtonState.Active} onClick={() => handleFeedback(null)}>
+                        <RiThumbUpLine className='h-4 w-4' />
+                      </ActionButton>
+                    ) : (
+                      <ActionButton state={ActionButtonState.Destructive} onClick={() => handleFeedback(null)}>
+                        <RiThumbDownLine className='h-4 w-4' />
+                      </ActionButton>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
           </div>
         )}
       </div>
